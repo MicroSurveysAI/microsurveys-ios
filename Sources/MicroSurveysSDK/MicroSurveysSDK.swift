@@ -22,7 +22,7 @@ public final class MicroSurveysSDK {
 
     public init(
         apiKey: String,
-        apiBaseURL: URL = URL(string: "https://api.microsurveys.io")!
+        apiBaseURL: URL = URL(string: "https://microsurveys.edubai.ventures")!
     ) {
         self.apiKey = apiKey
         self.apiBaseURL = apiBaseURL

@@ -1,0 +1,405 @@
+//
+//  SurveyViewController.swift
+//  MicroSurveysSDK
+//
+//  The bottom-sheet card that hosts a survey: a header (progress + close), the
+//  current question view, and a primary Next/Submit button. Handles multi-step
+//  navigation, required-answer validation, theming, and reporting the result.
+//
+//  Presentation:
+//   • iOS 15+ uses `UISheetPresentationController` (system bottom sheet, grabber,
+//     dimming, interactive dismiss).
+//   • iOS 14 falls back to a custom bottom card pinned over a dimmed backdrop.
+//
+
+#if canImport(UIKit)
+import UIKit
+
+public final class SurveyViewController: UIViewController, UIAdaptivePresentationControllerDelegate {
+
+    // MARK: Inputs
+
+    private let survey: Survey
+    private let questions: [Question]
+    private let theme: SurveyTheme
+    private let completion: ((SurveyResult) -> Void)?
+
+    // MARK: State
+
+    private var index = 0
+    private var answers: [String: SurveyAnswerValue] = [:]
+    private var reported = false
+    private var currentQuestionView: QuestionBaseView?
+
+    /// Whether we present inside a system sheet (iOS 15+) vs the custom card.
+    private var usesSystemSheet: Bool {
+        if #available(iOS 15.0, *) { return true }
+        return false
+    }
+
+    // MARK: Views
+
+    private let dimView = UIView()
+    private let card = UIView()
+    private let progressLabel = UILabel()
+    private let closeButton = UIButton(type: .system)
+    private let promptLabel = UILabel()
+    private let scrollView = UIScrollView()
+    private let questionContainer = UIView()
+    private let primaryButton = UIButton(type: .system)
+
+    private var cardBottomConstraint: NSLayoutConstraint?
+
+    // MARK: Init
+
+    public init(survey: Survey,
+                theme: SurveyTheme = .default,
+                completion: ((SurveyResult) -> Void)? = nil) {
+        self.survey = survey
+        self.questions = survey.orderedQuestions
+        self.theme = theme
+        self.completion = completion
+        super.init(nibName: nil, bundle: nil)
+        configurePresentation()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    private func configurePresentation() {
+        if usesSystemSheet {
+            modalPresentationStyle = .pageSheet
+            if #available(iOS 15.0, *), let sheet = sheetPresentationController {
+                sheet.detents = [.medium(), .large()]
+                sheet.prefersGrabberVisible = true
+                sheet.preferredCornerRadius = theme.cornerRadius
+            }
+        } else {
+            modalPresentationStyle = .overFullScreen
+            modalTransitionStyle = .crossDissolve
+        }
+        presentationController?.delegate = self
+    }
+
+    // MARK: Lifecycle
+
+    public override func viewDidLoad() {
+        super.viewDidLoad()
+        // Ensure the swipe-to-dismiss callback reaches us (the presentation
+        // controller may not have existed yet at init time).
+        presentationController?.delegate = self
+        buildHierarchy()
+        observeKeyboard()
+        guard !questions.isEmpty else {
+            // Nothing to show — report an immediately-completed empty result.
+            report(completed: true, dismissed: false)
+            return
+        }
+        showQuestion(at: 0, animated: false)
+    }
+
+    public override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        if !usesSystemSheet { animateCardIn() }
+    }
+
+    // MARK: Hierarchy
+
+    private func buildHierarchy() {
+        if usesSystemSheet {
+            view.backgroundColor = theme.surface
+        } else {
+            view.backgroundColor = .clear
+            // Dim backdrop with tap-to-dismiss.
+            dimView.backgroundColor = theme.background
+            dimView.translatesAutoresizingMaskIntoConstraints = false
+            view.addSubview(dimView)
+            NSLayoutConstraint.activate([
+                dimView.topAnchor.constraint(equalTo: view.topAnchor),
+                dimView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                dimView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+                dimView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+            ])
+            dimView.addGestureRecognizer(
+                UITapGestureRecognizer(target: self, action: #selector(closeTapped)))
+        }
+
+        // Card container.
+        card.backgroundColor = theme.surface
+        card.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(card)
+
+        if usesSystemSheet {
+            NSLayoutConstraint.activate([
+                card.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+                card.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                card.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+                card.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor)
+            ])
+        } else {
+            // Custom bottom card: rounded top corners + subtle shadow.
+            card.layer.cornerRadius = theme.cornerRadius
+            card.layer.cornerCurve = .continuous
+            card.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+            card.layer.shadowColor = theme.shadowColor.cgColor
+            card.layer.shadowOpacity = theme.shadowOpacity
+            card.layer.shadowRadius = theme.shadowRadius
+            card.layer.shadowOffset = theme.shadowOffset
+            let bottom = card.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+            cardBottomConstraint = bottom
+            NSLayoutConstraint.activate([
+                card.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                card.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+                card.topAnchor.constraint(greaterThanOrEqualTo: view.safeAreaLayoutGuide.topAnchor,
+                                          constant: 24),
+                bottom
+            ])
+        }
+
+        buildCardContents()
+    }
+
+    private func buildCardContents() {
+        let pad = theme.spacing + 4
+
+        // Header: progress label + close button.
+        progressLabel.font = theme.captionFont
+        progressLabel.adjustsFontForContentSizeCategory = true
+        progressLabel.textColor = theme.secondaryText
+        progressLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        let closeConfig = UIImage.SymbolConfiguration(pointSize: 16, weight: .semibold)
+        closeButton.setImage(UIImage(systemName: "xmark", withConfiguration: closeConfig), for: .normal)
+        closeButton.tintColor = theme.secondaryText
+        closeButton.accessibilityLabel = "Close survey"
+        closeButton.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
+        closeButton.translatesAutoresizingMaskIntoConstraints = false
+        closeButton.setContentHuggingPriority(.required, for: .horizontal)
+
+        // Prompt (per-question question text).
+        promptLabel.font = theme.promptFont
+        promptLabel.adjustsFontForContentSizeCategory = true
+        promptLabel.textColor = theme.text
+        promptLabel.numberOfLines = 0
+        promptLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        questionContainer.translatesAutoresizingMaskIntoConstraints = false
+
+        // Scrollable middle (prompt + question) so tall surveys / large text fit.
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.keyboardDismissMode = .interactive
+        scrollView.showsVerticalScrollIndicator = false
+        let contentStack = UIStackView(arrangedSubviews: [promptLabel, questionContainer])
+        contentStack.axis = .vertical
+        contentStack.spacing = theme.spacing + 8
+        contentStack.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.addSubview(contentStack)
+
+        // Primary button.
+        primaryButton.titleLabel?.font = theme.buttonFont
+        primaryButton.titleLabel?.adjustsFontForContentSizeCategory = true
+        primaryButton.setTitleColor(theme.accentText, for: .normal)
+        primaryButton.backgroundColor = theme.accent
+        primaryButton.layer.cornerRadius = theme.controlCornerRadius
+        primaryButton.layer.cornerCurve = .continuous
+        primaryButton.translatesAutoresizingMaskIntoConstraints = false
+        primaryButton.addTarget(self, action: #selector(primaryTapped), for: .touchUpInside)
+
+        card.addSubview(progressLabel)
+        card.addSubview(closeButton)
+        card.addSubview(scrollView)
+        card.addSubview(primaryButton)
+
+        NSLayoutConstraint.activate([
+            // Header.
+            closeButton.topAnchor.constraint(equalTo: card.topAnchor, constant: pad),
+            closeButton.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -pad),
+            closeButton.widthAnchor.constraint(equalToConstant: 28),
+            closeButton.heightAnchor.constraint(equalToConstant: 28),
+            progressLabel.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor),
+            progressLabel.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: pad),
+
+            // Scrollable content.
+            scrollView.topAnchor.constraint(equalTo: closeButton.bottomAnchor, constant: theme.spacing),
+            scrollView.leadingAnchor.constraint(equalTo: card.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: card.trailingAnchor),
+
+            contentStack.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor),
+            contentStack.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor),
+            contentStack.leadingAnchor.constraint(equalTo: scrollView.frameLayoutGuide.leadingAnchor,
+                                                  constant: pad),
+            contentStack.trailingAnchor.constraint(equalTo: scrollView.frameLayoutGuide.trailingAnchor,
+                                                   constant: -pad),
+
+            // Primary button pinned at the bottom.
+            primaryButton.topAnchor.constraint(equalTo: scrollView.bottomAnchor, constant: theme.spacing),
+            primaryButton.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: pad),
+            primaryButton.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -pad),
+            primaryButton.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -pad),
+            primaryButton.heightAnchor.constraint(equalToConstant: theme.controlHeight)
+        ])
+
+        if !usesSystemSheet {
+            // The custom card has no fixed height, and a scroll view has no
+            // intrinsic height — so make the card hug its content by asking the
+            // scroll view to match its content height. This is breakable: when
+            // the content is taller than the available space (capped by the
+            // card's top inequality), it yields and the content scrolls instead.
+            let hug = scrollView.contentLayoutGuide.heightAnchor
+                .constraint(equalTo: scrollView.heightAnchor)
+            hug.priority = UILayoutPriority(999)
+            hug.isActive = true
+        }
+    }
+
+    // MARK: Navigation
+
+    private func showQuestion(at newIndex: Int, animated: Bool) {
+        index = newIndex
+        let question = questions[index]
+
+        // Build the question view.
+        let questionView = QuestionViewFactory.make(for: question, theme: theme)
+        questionView.onAnswerChanged = { [weak self] in self?.updatePrimaryState() }
+
+        // Swap into the container (with an optional crossfade).
+        let outgoing = currentQuestionView
+        currentQuestionView = questionView
+        questionContainer.addSubview(questionView)
+        NSLayoutConstraint.activate([
+            questionView.topAnchor.constraint(equalTo: questionContainer.topAnchor),
+            questionView.leadingAnchor.constraint(equalTo: questionContainer.leadingAnchor),
+            questionView.trailingAnchor.constraint(equalTo: questionContainer.trailingAnchor),
+            questionView.bottomAnchor.constraint(equalTo: questionContainer.bottomAnchor)
+        ])
+
+        // Update chrome.
+        promptLabel.text = question.prompt
+        progressLabel.text = questions.count > 1 ? "\(index + 1) of \(questions.count)" : nil
+        let isLast = index == questions.count - 1
+        primaryButton.setTitle(isLast ? "Submit" : "Next", for: .normal)
+        updatePrimaryState()
+
+        if animated {
+            questionView.alpha = 0
+            UIView.animate(withDuration: 0.22, animations: {
+                questionView.alpha = 1
+                outgoing?.alpha = 0
+            }, completion: { _ in outgoing?.removeFromSuperview() })
+        } else {
+            outgoing?.removeFromSuperview()
+        }
+    }
+
+    private func updatePrimaryState() {
+        let valid = currentQuestionView?.isAnswerValid ?? false
+        primaryButton.isEnabled = valid
+        primaryButton.alpha = valid ? 1 : 0.45
+    }
+
+    @objc private func primaryTapped() {
+        guard let questionView = currentQuestionView else { return }
+        guard questionView.isAnswerValid else { return }
+
+        // Record this question's answer (if any).
+        let question = questions[index]
+        if let value = questionView.currentAnswer {
+            answers[question.id] = value
+        }
+
+        if index < questions.count - 1 {
+            view.endEditing(true)
+            showQuestion(at: index + 1, animated: true)
+        } else {
+            report(completed: true, dismissed: false)
+            dismissSelf()
+        }
+    }
+
+    @objc private func closeTapped() {
+        report(completed: false, dismissed: true)
+        dismissSelf()
+    }
+
+    // MARK: Result
+
+    private func report(completed: Bool, dismissed: Bool) {
+        guard !reported else { return }
+        reported = true
+        let ordered = questions.compactMap { q -> SurveyAnswer? in
+            guard let value = answers[q.id] else { return nil }
+            return SurveyAnswer(questionId: q.id, value: value)
+        }
+        completion?(SurveyResult(surveyId: survey.id,
+                                 answers: ordered,
+                                 completed: completed,
+                                 dismissed: dismissed))
+    }
+
+    private func dismissSelf() {
+        view.endEditing(true)
+        if !usesSystemSheet {
+            animateCardOut { [weak self] in self?.dismiss(animated: false) }
+        } else {
+            dismiss(animated: true)
+        }
+    }
+
+    // MARK: UIAdaptivePresentationControllerDelegate (interactive/swipe dismiss)
+
+    public func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
+        // User swiped the sheet away without finishing.
+        report(completed: false, dismissed: true)
+    }
+
+    // MARK: Custom card animation (iOS 14 fallback)
+
+    private func animateCardIn() {
+        view.layoutIfNeeded()
+        let height = card.bounds.height
+        card.transform = CGAffineTransform(translationX: 0, y: height)
+        dimView.alpha = 0
+        UIView.animate(withDuration: 0.32, delay: 0, options: [.curveEaseOut]) {
+            self.card.transform = .identity
+            self.dimView.alpha = 1
+        }
+    }
+
+    private func animateCardOut(_ completion: @escaping () -> Void) {
+        let height = card.bounds.height
+        UIView.animate(withDuration: 0.26, delay: 0, options: [.curveEaseIn], animations: {
+            self.card.transform = CGAffineTransform(translationX: 0, y: height)
+            self.dimView.alpha = 0
+        }, completion: { _ in completion() })
+    }
+
+    // MARK: Keyboard avoidance
+
+    private func observeKeyboard() {
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(keyboardWillChange(_:)),
+            name: UIResponder.keyboardWillChangeFrameNotification, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(keyboardWillHide(_:)),
+            name: UIResponder.keyboardWillHideNotification, object: nil)
+    }
+
+    @objc private func keyboardWillChange(_ note: Notification) {
+        guard let frame = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
+        let overlap = max(0, view.bounds.maxY - view.convert(frame, from: nil).minY)
+        // Lift content above the keyboard via the safe-area inset (works in both
+        // the system sheet and the custom card).
+        additionalSafeAreaInsets.bottom = overlap > 0
+            ? max(0, overlap - view.safeAreaInsets.bottom + additionalSafeAreaInsets.bottom)
+            : 0
+        UIView.animate(withDuration: 0.25) { self.view.layoutIfNeeded() }
+    }
+
+    @objc private func keyboardWillHide(_ note: Notification) {
+        additionalSafeAreaInsets.bottom = 0
+        UIView.animate(withDuration: 0.25) { self.view.layoutIfNeeded() }
+    }
+
+    deinit { NotificationCenter.default.removeObserver(self) }
+}
+#endif
