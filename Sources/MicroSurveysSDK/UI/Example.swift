@@ -54,6 +54,32 @@ enum MicroSurveysExample {
         }
     }
 
+    /// Reference: the full host integration. In production you do NOT present
+    /// surveys yourself — you wire up the SDK in ~3 lines and the trigger engine
+    /// presents the right survey when a matching Amplitude event flows through.
+    ///
+    ///     import MicroSurveysSDK
+    ///     import AmplitudeSwift
+    ///
+    ///     let ms = MicroSurveysSDK(apiKey: "ms_live_xxx")   // your project key
+    ///     amplitude.add(plugin: ms.amplitudePlugin())        // forward events + identity
+    ///     ms.start()                                         // fetch config + flush outbox
+    ///
+    ///     // Optional — for non-Amplitude hosts or extra audience context:
+    ///     ms.setUser(id: "user-123", properties: ["plan": "pro"])
+    ///     ms.track("booking_completed", properties: ["amount": 42])
+    ///
+    /// From here on, when an event satisfies a published survey's trigger and the
+    /// user passes window/frequency/audience/sampling/cap eligibility, the SDK
+    /// presents the survey on the top-most view controller and POSTs the
+    /// impression + response automatically.
+    static func runtimeIntegrationSketch() {
+        let ms = MicroSurveysSDK(apiKey: "ms_test_demo")
+        ms.start()
+        // A manual event (the Amplitude plugin path does this for you):
+        ms.track("booking_completed", properties: ["amount": 42])
+    }
+
     /// The same survey built programmatically (no JSON), for previews/tests.
     static func presentMultiStepDemo(from presenter: UIViewController) {
         let survey = Survey(
