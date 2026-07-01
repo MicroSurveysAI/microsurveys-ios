@@ -114,10 +114,15 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
             CGSize(width: contentWidth, height: 0),
             withHorizontalFittingPriority: .required,
             verticalFittingPriority: .fittingSizeLevel).height
-        let top = (hasProgress ? (pad + 44 + theme.spacing) : topInset) + view.safeAreaInsets.top
+        // Use the BASE safe-area insets (excluding the keyboard-avoidance insets we add ourselves),
+        // so an auto-focused open-text field doesn't inflate the detent via safeAreaInsets and then
+        // leave surplus height in the sheet.
+        let baseTopInset = max(0, view.safeAreaInsets.top - additionalSafeAreaInsets.top)
+        let baseBottomInset = max(0, view.safeAreaInsets.bottom - additionalSafeAreaInsets.bottom)
+        let top = (hasProgress ? (pad + 44 + theme.spacing) : topInset) + baseTopInset
         // Clamp the bottom inset so the on-screen keyboard (which inflates safeAreaInsets.bottom for
         // a focused text field) doesn't balloon the detent and jump the sheet to full height.
-        let bottom = theme.spacing + theme.controlHeight + pad + min(view.safeAreaInsets.bottom, 44)
+        let bottom = theme.spacing + theme.controlHeight + pad + min(baseBottomInset, 44)
         return top + contentHeight + bottom
     }
 
@@ -329,6 +334,17 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
         let contentTrailing = contentStack.trailingAnchor.constraint(
             equalTo: scrollView.frameLayoutGuide.trailingAnchor, constant: -pad)
 
+        // Keep the button flush under the content. `<=` prevents it overrunning the card, while the
+        // lower-priority `==` keeps it at the bottom edge when the sheet is sized exactly. If the
+        // self-sizing detent overshoots slightly (e.g. the open-text field's soft min height), the
+        // scroll view hugs its content (below) and the `==` yields — so any surplus falls *below*
+        // the button instead of opening a gap between the content and the button.
+        let buttonBottomMax = primaryButton.bottomAnchor.constraint(
+            lessThanOrEqualTo: card.bottomAnchor, constant: -pad)
+        let buttonBottomPin = primaryButton.bottomAnchor.constraint(
+            equalTo: card.bottomAnchor, constant: -pad)
+        buttonBottomPin.priority = UILayoutPriority(800)
+
         NSLayoutConstraint.activate([
             // Header.
             closeButton.topAnchor.constraint(equalTo: card.topAnchor, constant: pad),
@@ -353,21 +369,19 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
             primaryButton.topAnchor.constraint(equalTo: scrollView.bottomAnchor, constant: theme.spacing),
             primaryButton.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: pad),
             primaryButton.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -pad),
-            primaryButton.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -pad),
+            buttonBottomMax,
+            buttonBottomPin,
             primaryButton.heightAnchor.constraint(equalToConstant: theme.controlHeight)
         ])
 
-        if !usesSystemSheet {
-            // The custom card has no fixed height, and a scroll view has no
-            // intrinsic height — so make the card hug its content by asking the
-            // scroll view to match its content height. This is breakable: when
-            // the content is taller than the available space (capped by the
-            // card's top inequality), it yields and the content scrolls instead.
-            let hug = scrollView.contentLayoutGuide.heightAnchor
-                .constraint(equalTo: scrollView.heightAnchor)
-            hug.priority = UILayoutPriority(999)
-            hug.isActive = true
-        }
+        // Make the scroll view hug its content so the button always sits directly beneath the
+        // content — no empty band in between — regardless of the resolved sheet/card height. This is
+        // breakable (999): when the content is taller than the available space it yields and the
+        // content scrolls instead. Applies to both the system sheet and the custom card.
+        let hug = scrollView.contentLayoutGuide.heightAnchor
+            .constraint(equalTo: scrollView.heightAnchor)
+        hug.priority = UILayoutPriority(999)
+        hug.isActive = true
     }
 
     /// Sets the prompt text, applying line-height + letter-spacing via attributes when they differ
