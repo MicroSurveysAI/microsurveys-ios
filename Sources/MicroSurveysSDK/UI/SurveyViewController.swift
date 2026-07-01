@@ -225,31 +225,21 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
         progressLabel.textColor = theme.secondaryText
         progressLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        // Close button with a native material background that stays visible on every iOS version:
-        // Liquid Glass on iOS 26+, the system gray material before it. No custom colors from us.
-        let closeGlyph = UIImage(systemName: "xmark",
-                                 withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold))
-        if #available(iOS 26.0, *) {
-            var cfg = UIButton.Configuration.glass()
-            cfg.image = closeGlyph
-            cfg.cornerStyle = .capsule
-            closeButton.configuration = cfg
-        } else if #available(iOS 15.0, *) {
-            var cfg = UIButton.Configuration.gray()
-            cfg.image = closeGlyph
-            cfg.baseForegroundColor = .secondaryLabel
-            cfg.cornerStyle = .capsule
-            closeButton.configuration = cfg
-        } else {
-            closeButton.setImage(closeGlyph, for: .normal)
-            closeButton.tintColor = .secondaryLabel
-            closeButton.backgroundColor = .secondarySystemFill
-            closeButton.layer.cornerRadius = 15
-        }
+        // Classic iOS close button. `UIButton(type: .close)` only draws its circular chrome inside
+        // system bars/toolbars — in a plain view (and on iOS 26's Liquid Glass) it renders as a bare
+        // X. So we use the system close SYMBOL directly ("xmark.circle.fill" = the gray circle + X),
+        // which reads as the native close on every version. No custom background drawing.
+        closeButton.setImage(
+            UIImage(systemName: "xmark.circle.fill",
+                    withConfiguration: UIImage.SymbolConfiguration(pointSize: 28, weight: .regular)),
+            for: .normal)
+        closeButton.tintColor = .secondaryLabel
         closeButton.accessibilityLabel = "Close survey"
         closeButton.isHidden = !canDismiss
         closeButton.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
         closeButton.translatesAutoresizingMaskIntoConstraints = false
+        closeButton.setContentHuggingPriority(.required, for: .horizontal)
+        closeButton.setContentHuggingPriority(.required, for: .vertical)
 
         // Prompt (per-question question text).
         promptLabel.font = theme.promptFont
