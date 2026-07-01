@@ -114,7 +114,7 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
             CGSize(width: contentWidth, height: 0),
             withHorizontalFittingPriority: .required,
             verticalFittingPriority: .fittingSizeLevel).height
-        let top = (hasProgress ? (pad + 30 + theme.spacing) : topInset) + view.safeAreaInsets.top
+        let top = (hasProgress ? (pad + 44 + theme.spacing) : topInset) + view.safeAreaInsets.top
         // Clamp the bottom inset so the on-screen keyboard (which inflates safeAreaInsets.bottom for
         // a focused text field) doesn't balloon the detent and jump the sheet to full height.
         let bottom = theme.spacing + theme.controlHeight + pad + min(view.safeAreaInsets.bottom, 44)
@@ -247,15 +247,15 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
         if #available(iOS 26.0, *) {
             var cfg = UIButton.Configuration.glass()
             cfg.image = UIImage(systemName: "xmark",
-                                withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold))
+                                withConfiguration: UIImage.SymbolConfiguration(pointSize: 16, weight: .semibold))
             cfg.cornerStyle = .capsule
             cfg.baseForegroundColor = .secondaryLabel
-            cfg.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 6, bottom: 6, trailing: 6)
+            cfg.contentInsets = NSDirectionalEdgeInsets(top: 13, leading: 13, bottom: 13, trailing: 13)
             closeButton.configuration = cfg
         } else {
             closeButton.setImage(
                 UIImage(systemName: "xmark.circle.fill",
-                        withConfiguration: UIImage.SymbolConfiguration(pointSize: 28, weight: .regular)),
+                        withConfiguration: UIImage.SymbolConfiguration(pointSize: 34, weight: .regular)),
                 for: .normal)
             closeButton.tintColor = .secondaryLabel
         }
@@ -281,7 +281,7 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
         let promptContainer = UIView()
         promptContainer.translatesAutoresizingMaskIntoConstraints = false
         promptContainer.addSubview(promptLabel)
-        let promptRightInset: CGFloat = (questions.count > 1) ? 0 : 34
+        let promptRightInset: CGFloat = (questions.count > 1) ? 0 : 48
         NSLayoutConstraint.activate([
             promptLabel.topAnchor.constraint(equalTo: promptContainer.topAnchor),
             promptLabel.bottomAnchor.constraint(equalTo: promptContainer.bottomAnchor),
@@ -333,8 +333,8 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
             // Header.
             closeButton.topAnchor.constraint(equalTo: card.topAnchor, constant: pad),
             closeButton.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -pad),
-            closeButton.widthAnchor.constraint(equalToConstant: 30),
-            closeButton.heightAnchor.constraint(equalToConstant: 30),
+            closeButton.widthAnchor.constraint(equalToConstant: 44),
+            closeButton.heightAnchor.constraint(equalToConstant: 44),
             progressLabel.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor),
             progressLabel.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: pad),
 
