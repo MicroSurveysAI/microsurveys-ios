@@ -27,6 +27,8 @@ public struct ProjectTheme: Codable, Equatable {
     public let border: String?
     public let cornerRadius: Double?
     public let controlRadius: Double?
+    /// When true, controls render as full-round pills (corner radius = controlHeight / 2).
+    public let controlPill: Bool?
     public let spacing: Double?
     /// Height of tappable controls (submit button, option rows, scale chips), in points.
     public let controlHeight: Double?

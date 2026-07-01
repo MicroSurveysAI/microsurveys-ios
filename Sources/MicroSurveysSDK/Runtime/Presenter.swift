@@ -122,6 +122,8 @@ extension Presenter {
         if let sp = project.spacing { theme.spacing = CGFloat(sp) }
         if let ch = project.controlHeight { theme.controlHeight = CGFloat(ch) }
         if let scale = project.textScale { theme.textScale = CGFloat(scale) }
+        // Full-round pill controls: corner radius = half the control height (capsule).
+        if project.controlPill == true { theme.controlCornerRadius = theme.controlHeight / 2 }
 
         if project.position == "center" { theme.position = .center }
         switch project.alignment {
