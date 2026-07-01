@@ -115,7 +115,9 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
             withHorizontalFittingPriority: .required,
             verticalFittingPriority: .fittingSizeLevel).height
         let top = (hasProgress ? (pad + 30 + theme.spacing) : topInset) + view.safeAreaInsets.top
-        let bottom = theme.spacing + theme.controlHeight + pad + view.safeAreaInsets.bottom
+        // Clamp the bottom inset so the on-screen keyboard (which inflates safeAreaInsets.bottom for
+        // a focused text field) doesn't balloon the detent and jump the sheet to full height.
+        let bottom = theme.spacing + theme.controlHeight + pad + min(view.safeAreaInsets.bottom, 44)
         return top + contentHeight + bottom
     }
 
@@ -134,6 +136,16 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
             return
         }
         showQuestion(at: 0, animated: false)
+    }
+
+    public override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        // The custom card presents without a system transition and runs its own entrance in
+        // viewDidAppear — pre-hide so there's no one-frame flash of the final state.
+        if !usesSystemSheet {
+            dimView.alpha = 0
+            if theme.position == .center { card.alpha = 0 }
+        }
     }
 
     public override func viewDidAppear(_ animated: Bool) {
@@ -219,7 +231,9 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
     private func buildCardContents() {
         pad = theme.spacing + 4
         // Extra breathing room at the very top so the title/close button clear the sheet grabber.
-        topInset = pad + 12
+        // Extra top breathing room only for the system sheet (it has the drag grabber up top).
+        // Dialogs / custom cards have no grabber, so they use the normal padding.
+        topInset = usesSystemSheet ? pad + 12 : pad
 
         // Header: progress label + close button.
         progressLabel.font = theme.captionFont
@@ -227,15 +241,24 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
         progressLabel.textColor = theme.secondaryText
         progressLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        // Classic iOS close button. `UIButton(type: .close)` only draws its circular chrome inside
-        // system bars/toolbars — in a plain view (and on iOS 26's Liquid Glass) it renders as a bare
-        // X. So we use the system close SYMBOL directly ("xmark.circle.fill" = the gray circle + X),
-        // which reads as the native close on every version. No custom background drawing.
-        closeButton.setImage(
-            UIImage(systemName: "xmark.circle.fill",
-                    withConfiguration: UIImage.SymbolConfiguration(pointSize: 28, weight: .regular)),
-            for: .normal)
-        closeButton.tintColor = .secondaryLabel
+        // Close button: real Liquid Glass on iOS 26+ (UIButton.Configuration.glass — the native
+        // material), and the classic gray "xmark.circle.fill" symbol on earlier versions. `.close`
+        // type only draws chrome inside system bars, so we don't use it here.
+        if #available(iOS 26.0, *) {
+            var cfg = UIButton.Configuration.glass()
+            cfg.image = UIImage(systemName: "xmark",
+                                withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold))
+            cfg.cornerStyle = .capsule
+            cfg.baseForegroundColor = .secondaryLabel
+            cfg.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 6, bottom: 6, trailing: 6)
+            closeButton.configuration = cfg
+        } else {
+            closeButton.setImage(
+                UIImage(systemName: "xmark.circle.fill",
+                        withConfiguration: UIImage.SymbolConfiguration(pointSize: 28, weight: .regular)),
+                for: .normal)
+            closeButton.tintColor = .secondaryLabel
+        }
         closeButton.accessibilityLabel = "Close survey"
         closeButton.isHidden = !canDismiss
         closeButton.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
@@ -436,7 +459,7 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
             showQuestion(at: index + 1, animated: true)
         } else {
             report(completed: true, dismissed: false)
-            dismissSelf()
+            showThankYouThenDismiss()
         }
     }
 
@@ -458,6 +481,49 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
                                  answers: ordered,
                                  completed: completed,
                                  dismissed: dismissed))
+    }
+
+    /// Brief "thanks" confirmation after a completed submission, then auto-dismiss. The response was
+    /// already recorded by `report(...)`; this is purely the closing acknowledgement.
+    private func showThankYouThenDismiss() {
+        view.endEditing(true)
+        closeButton.isHidden = true
+        scrollView.isHidden = true
+        primaryButton.isHidden = true
+        progressLabel.isHidden = true
+
+        let check = UIImageView(image: UIImage(systemName: "checkmark.circle.fill",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 48, weight: .semibold)))
+        check.tintColor = theme.accent
+        check.contentMode = .scaleAspectFit
+
+        let label = UILabel()
+        label.text = "Thanks! Your response was submitted."
+        label.font = theme.promptFont
+        label.textColor = theme.text
+        label.textAlignment = .center
+        label.numberOfLines = 0
+
+        let stack = UIStackView(arrangedSubviews: [check, label])
+        stack.axis = .vertical
+        stack.alignment = .center
+        stack.spacing = theme.spacing
+        stack.alpha = 0
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.centerXAnchor.constraint(equalTo: card.centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: card.centerYAnchor),
+            stack.leadingAnchor.constraint(greaterThanOrEqualTo: card.leadingAnchor, constant: pad),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: card.trailingAnchor, constant: -pad),
+            stack.topAnchor.constraint(greaterThanOrEqualTo: card.topAnchor, constant: pad),
+            stack.bottomAnchor.constraint(lessThanOrEqualTo: card.bottomAnchor, constant: -pad),
+        ])
+
+        UIView.animate(withDuration: 0.25) { stack.alpha = 1 }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.3) { [weak self] in
+            self?.dismissSelf()
+        }
     }
 
     private func dismissSelf() {

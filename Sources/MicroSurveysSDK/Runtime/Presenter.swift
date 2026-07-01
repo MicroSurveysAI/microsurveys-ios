@@ -50,7 +50,11 @@ final class Presenter {
         case "sheet", "bottom":  surveyTheme.position = .bottom
         default: break
         }
-        MicroSurveysUI.present(survey: survey, on: anchor, theme: surveyTheme) { result in
+        // The custom card (dialog, and the iOS 14 bottom card) runs its OWN entrance animation, so
+        // present it without the system transition — otherwise it animates in twice.
+        let customCard: Bool
+        if #available(iOS 15.0, *) { customCard = surveyTheme.position != .bottom } else { customCard = true }
+        MicroSurveysUI.present(survey: survey, on: anchor, theme: surveyTheme, animated: !customCard) { result in
             MSLog.info("survey '\(survey.name)' closed (completed=\(result.completed), dismissed=\(result.dismissed), answers=\(result.answers.count))")
             completion(result)
         }
