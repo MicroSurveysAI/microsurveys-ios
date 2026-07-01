@@ -616,11 +616,13 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
     @objc private func keyboardWillChange(_ note: Notification) {
         guard let frame = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
         let overlap = max(0, view.bounds.maxY - view.convert(frame, from: nil).minY)
-        // Lift content above the keyboard via the safe-area inset (works in both
-        // the system sheet and the custom card).
-        additionalSafeAreaInsets.bottom = overlap > 0
-            ? max(0, overlap - view.safeAreaInsets.bottom + additionalSafeAreaInsets.bottom)
-            : 0
+        // The base (non-keyboard) bottom inset, e.g. the home indicator.
+        let baseBottom = view.safeAreaInsets.bottom - additionalSafeAreaInsets.bottom
+        // Lift content above the keyboard via the safe-area inset (works in both the system sheet and
+        // the custom card), adding `pad` so the button keeps breathing room above the keyboard rather
+        // than sitting flush against it. With no keyboard we add nothing — the home-indicator spacing
+        // is handled by the layout constraints (max(pad, safeAreaBottom)).
+        additionalSafeAreaInsets.bottom = overlap > baseBottom ? (overlap - baseBottom + pad) : 0
         UIView.animate(withDuration: 0.25) { self.view.layoutIfNeeded() }
     }
 
