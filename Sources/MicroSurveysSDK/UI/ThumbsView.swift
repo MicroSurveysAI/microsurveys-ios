@@ -35,8 +35,8 @@ public final class ThumbsView: QuestionBaseView {
             row.bottomAnchor.constraint(equalTo: bottomAnchor),
             row.leadingAnchor.constraint(equalTo: leadingAnchor),
             row.trailingAnchor.constraint(equalTo: trailingAnchor),
-            upButton.heightAnchor.constraint(equalToConstant: 72),
-            downButton.heightAnchor.constraint(equalToConstant: 72)
+            upButton.heightAnchor.constraint(equalToConstant: theme.controlHeight),
+            downButton.heightAnchor.constraint(equalToConstant: theme.controlHeight)
         ])
         refresh()
     }

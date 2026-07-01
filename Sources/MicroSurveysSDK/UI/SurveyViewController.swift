@@ -221,11 +221,24 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
 
         questionContainer.translatesAutoresizingMaskIntoConstraints = false
 
+        // Wrap the prompt so we can inset only ITS right edge to clear the close button on
+        // single-question surveys. The answer controls below stay full width.
+        let promptContainer = UIView()
+        promptContainer.translatesAutoresizingMaskIntoConstraints = false
+        promptContainer.addSubview(promptLabel)
+        let promptRightInset: CGFloat = (questions.count > 1) ? 0 : 34
+        NSLayoutConstraint.activate([
+            promptLabel.topAnchor.constraint(equalTo: promptContainer.topAnchor),
+            promptLabel.bottomAnchor.constraint(equalTo: promptContainer.bottomAnchor),
+            promptLabel.leadingAnchor.constraint(equalTo: promptContainer.leadingAnchor),
+            promptLabel.trailingAnchor.constraint(equalTo: promptContainer.trailingAnchor, constant: -promptRightInset),
+        ])
+
         // Scrollable middle (prompt + question) so tall surveys / large text fit.
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.keyboardDismissMode = .interactive
         scrollView.showsVerticalScrollIndicator = false
-        let contentStack = UIStackView(arrangedSubviews: [promptLabel, questionContainer])
+        let contentStack = UIStackView(arrangedSubviews: [promptContainer, questionContainer])
         contentStack.axis = .vertical
         contentStack.spacing = theme.spacing + 8
         contentStack.translatesAutoresizingMaskIntoConstraints = false
@@ -250,15 +263,15 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
         card.bringSubviewToFront(closeButton)
 
         // The "1 of N" progress only exists for multi-question surveys. For a single question there
-        // is no header text, so start the content at the very top (no empty band above the prompt)
-        // and reserve the top-right corner for the close button so the prompt doesn't run under it.
+        // is no header text, so start the content at the very top (no empty band above the prompt);
+        // the close-button corner is cleared by the prompt's own right inset (above), while the
+        // answer controls stay full width.
         let hasProgress = questions.count > 1
         let scrollTop = hasProgress
             ? scrollView.topAnchor.constraint(equalTo: closeButton.bottomAnchor, constant: theme.spacing)
             : scrollView.topAnchor.constraint(equalTo: card.topAnchor, constant: topInset)
         let contentTrailing = contentStack.trailingAnchor.constraint(
-            equalTo: scrollView.frameLayoutGuide.trailingAnchor,
-            constant: hasProgress ? -pad : -(pad + 34))
+            equalTo: scrollView.frameLayoutGuide.trailingAnchor, constant: -pad)
 
         NSLayoutConstraint.activate([
             // Header.

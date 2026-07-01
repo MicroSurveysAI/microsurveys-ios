@@ -62,7 +62,7 @@ public final class OpenTextView: QuestionBaseView, UITextViewDelegate {
             textView.topAnchor.constraint(equalTo: topAnchor),
             textView.leadingAnchor.constraint(equalTo: leadingAnchor),
             textView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            textView.heightAnchor.constraint(greaterThanOrEqualToConstant: 96),
+            textView.heightAnchor.constraint(greaterThanOrEqualToConstant: theme.controlHeight * 2),
 
             // Placeholder sits inside the text view's inset.
             placeholderLabel.topAnchor.constraint(equalTo: textView.topAnchor, constant: 12),
