@@ -22,6 +22,9 @@ public final class SingleChoiceView: QuestionBaseView {
         let stack = UIStackView()
         stack.axis = .vertical
         stack.spacing = 10
+        // Every option row takes the tallest row's height, so a wrapping label on one option can't
+        // make it taller than its siblings — all rows stay visually consistent ("equally dynamic").
+        stack.distribution = .fillEqually
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
 

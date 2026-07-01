@@ -23,7 +23,9 @@ public final class ThumbsView: QuestionBaseView {
 
         let row = UIStackView(arrangedSubviews: [upButton, downButton])
         row.axis = .horizontal
-        row.alignment = .center
+        // `.fill` (not `.center`) so both buttons share the exact same height regardless of the
+        // emoji glyphs' intrinsic metrics; `.fillEqually` keeps their widths equal too.
+        row.alignment = .fill
         row.distribution = .fillEqually
         row.spacing = 16
         row.translatesAutoresizingMaskIntoConstraints = false
