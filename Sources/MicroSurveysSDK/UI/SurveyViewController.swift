@@ -524,7 +524,7 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
 
         let label = UILabel()
         let custom = survey.successMessage?.trimmingCharacters(in: .whitespacesAndNewlines)
-        label.text = (custom?.isEmpty == false ? custom : "Thanks! Your response was submitted.")
+        label.text = (custom?.isEmpty == false ? custom : "Thanks!")
         label.font = theme.promptFont
         label.textColor = theme.text
         label.textAlignment = .center
