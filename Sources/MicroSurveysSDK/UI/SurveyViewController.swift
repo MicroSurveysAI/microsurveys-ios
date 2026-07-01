@@ -119,7 +119,9 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
         // leave surplus height in the sheet.
         let baseTopInset = max(0, view.safeAreaInsets.top - additionalSafeAreaInsets.top)
         let baseBottomInset = max(0, view.safeAreaInsets.bottom - additionalSafeAreaInsets.bottom)
-        let top = (hasProgress ? (pad + 44 + theme.spacing) : topInset) + baseTopInset
+        // Header height: the compact progress line (its own line height + spacing) when multi-question,
+        // otherwise nothing — matches the layout where content starts just below the progress line.
+        let top = topInset + (hasProgress ? theme.captionFont.lineHeight + theme.spacing : 0) + baseTopInset
         // Gap below the button is max(pad, safeAreaBottom): on home-indicator devices the inset
         // already provides the breathing room, so we don't add `pad` on top of it. Clamp the inset
         // so the keyboard (which inflates safeAreaInsets.bottom for a focused field) can't balloon
@@ -214,10 +216,14 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
                 card.layer.maskedCorners = [
                     .layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner,
                 ]
+                // Center within the SAFE AREA (not the whole view) so that when the keyboard opens —
+                // which raises the safe-area bottom — the dialog recenters in the reduced space above
+                // the keyboard and keeps its natural size, instead of staying screen-centered and
+                // compressing its content behind the keyboard.
                 NSLayoutConstraint.activate([
                     card.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
                     card.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
-                    card.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+                    card.centerYAnchor.constraint(equalTo: view.safeAreaLayoutGuide.centerYAnchor),
                     card.topAnchor.constraint(greaterThanOrEqualTo: view.safeAreaLayoutGuide.topAnchor, constant: 24),
                     card.bottomAnchor.constraint(lessThanOrEqualTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -24),
                 ])
@@ -286,12 +292,14 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
 
         questionContainer.translatesAutoresizingMaskIntoConstraints = false
 
-        // Wrap the prompt so we can inset only ITS right edge to clear the close button on
-        // single-question surveys. The answer controls below stay full width.
+        // Wrap the prompt so we can inset only ITS right edge to clear the close button (the answer
+        // controls below stay full width). The prompt now starts alongside the compact progress line
+        // rather than below the full close-button height, so it needs the inset whenever the close
+        // button is shown — for multi-question surveys too.
         let promptContainer = UIView()
         promptContainer.translatesAutoresizingMaskIntoConstraints = false
         promptContainer.addSubview(promptLabel)
-        let promptRightInset: CGFloat = (questions.count > 1) ? 0 : 48
+        let promptRightInset: CGFloat = canDismiss ? 48 : 0
         NSLayoutConstraint.activate([
             promptLabel.topAnchor.constraint(equalTo: promptContainer.topAnchor),
             promptLabel.bottomAnchor.constraint(equalTo: promptContainer.bottomAnchor),
@@ -332,9 +340,12 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
         // is no header text, so start the content at the very top (no empty band above the prompt);
         // the close-button corner is cleared by the prompt's own right inset (above), while the
         // answer controls stay full width.
+        // Start the content just below the compact progress LINE (its own line height), not below the
+        // full 44pt close-button — the close button lives in the top-right corner and the prompt's
+        // right inset clears it. This keeps the "N of M" counter from reserving a tall header band.
         hasProgress = questions.count > 1
         let scrollTop = hasProgress
-            ? scrollView.topAnchor.constraint(equalTo: closeButton.bottomAnchor, constant: theme.spacing)
+            ? scrollView.topAnchor.constraint(equalTo: progressLabel.bottomAnchor, constant: theme.spacing)
             : scrollView.topAnchor.constraint(equalTo: card.topAnchor, constant: topInset)
         let contentTrailing = contentStack.trailingAnchor.constraint(
             equalTo: scrollView.frameLayoutGuide.trailingAnchor, constant: -pad)
@@ -361,7 +372,7 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
             closeButton.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -pad),
             closeButton.widthAnchor.constraint(equalToConstant: 44),
             closeButton.heightAnchor.constraint(equalToConstant: 44),
-            progressLabel.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor),
+            progressLabel.topAnchor.constraint(equalTo: card.topAnchor, constant: topInset),
             progressLabel.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: pad),
 
             // Scrollable content (top anchor computed above).
