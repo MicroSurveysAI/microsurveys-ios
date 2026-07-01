@@ -114,7 +114,7 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
             CGSize(width: contentWidth, height: 0),
             withHorizontalFittingPriority: .required,
             verticalFittingPriority: .fittingSizeLevel).height
-        let top = (hasProgress ? (topInset + 30 + theme.spacing) : topInset) + view.safeAreaInsets.top
+        let top = (hasProgress ? (pad + 30 + theme.spacing) : topInset) + view.safeAreaInsets.top
         let bottom = theme.spacing + theme.controlHeight + pad + view.safeAreaInsets.bottom
         return top + contentHeight + bottom
     }
@@ -150,7 +150,9 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
         } else {
             view.backgroundColor = .clear
             // Dim backdrop with tap-to-dismiss.
-            dimView.backgroundColor = theme.background
+            // Scrim at a fixed ~40% (like a system sheet's dim), regardless of the configured
+            // overlay color's own alpha — the dashboard sends an opaque hex.
+            dimView.backgroundColor = theme.background.withAlphaComponent(0.4)
             dimView.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview(dimView)
             NSLayoutConstraint.activate([
@@ -306,7 +308,7 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
 
         NSLayoutConstraint.activate([
             // Header.
-            closeButton.topAnchor.constraint(equalTo: card.topAnchor, constant: topInset),
+            closeButton.topAnchor.constraint(equalTo: card.topAnchor, constant: pad),
             closeButton.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -pad),
             closeButton.widthAnchor.constraint(equalToConstant: 30),
             closeButton.heightAnchor.constraint(equalToConstant: 30),
