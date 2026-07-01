@@ -40,15 +40,18 @@ public final class MicroSurveysAmplitudePlugin: Plugin {
 
     public func setup(amplitude: Amplitude) {
         self.amplitude = amplitude
-        // Capture whatever identity is known at registration time.
-        refreshIdentity(from: nil)
+        // Prime from the current snapshot (usually empty at launch — properties are set lazily,
+        // so the real population happens per-event in execute()).
+        refreshIdentity()
         MSLog.info("Amplitude plugin registered (enrichment)")
     }
 
     public func execute(event: BaseEvent) -> BaseEvent? {
-        // Keep the identity snapshot current. On `$identify` we also harvest the
-        // user properties carried by the event.
-        refreshIdentity(from: event)
+        // Read Amplitude's live identity snapshot per event. Amplitude applies $set/$unset to
+        // `amplitude.identity` as $identify events flow through the timeline, so this gives the
+        // complete, current user properties — independent of when identify fires or plugin order,
+        // and it survives restarts (Amplitude persists identity).
+        refreshIdentity()
 
         // Forward the event for trigger evaluation. System events (`$...`) won't
         // match host-defined triggers, but are cheap to pass through.
@@ -67,29 +70,18 @@ public final class MicroSurveysAmplitudePlugin: Plugin {
 
     // MARK: Identity
 
-    private func refreshIdentity(from event: BaseEvent?) {
-        // Primary path: public accessors that exist across Amplitude-Swift
-        // versions. TODO: if a build exposes `amplitude.identity.userId /
-        // .deviceId / .userProperties` directly, prefer that single snapshot.
-        let userId = amplitude?.getUserId()
-        let deviceId = amplitude?.getDeviceId()
-
-        var userProperties: [String: Any]? = nil
-        if let event, event.eventType == "$identify" {
-            userProperties = Self.userProperties(from: event)
-        }
-
-        forwarder?.forwardIdentity(userId: userId, deviceId: deviceId, userProperties: userProperties)
-    }
-
-    /// Extracts the flattened user properties from an `$identify` event. The
-    /// operations are nested under keys like `$set`; we read `$set` when present
-    /// and otherwise fall back to the raw map.
-    /// TODO: handle `$unset` / `$add` if audiences ever need them.
-    private static func userProperties(from event: BaseEvent) -> [String: Any]? {
-        guard let ops = event.userProperties else { return nil }
-        if let set = ops["$set"] as? [String: Any] { return set }
-        return ops
+    /// Forward Amplitude's current identity snapshot. `amplitude.identity` (Amplitude-Swift 1.18+)
+    /// is a thread-safe value copy carrying userId/deviceId and the current userProperties (all
+    /// `$set` operations applied). Reading it per event means we always have the complete, current
+    /// set for audience matching.
+    private func refreshIdentity() {
+        guard let amplitude else { return }
+        let snapshot = amplitude.identity
+        forwarder?.forwardIdentity(
+            userId: snapshot.userId,
+            deviceId: snapshot.deviceId,
+            userProperties: snapshot.userProperties
+        )
     }
 }
 #endif

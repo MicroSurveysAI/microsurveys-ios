@@ -58,10 +58,16 @@ final class IdentityStore {
         if let userId { identity.amplitudeUserId = userId }
         if let deviceId { identity.amplitudeDeviceId = deviceId }
         if let props = userProperties {
+            // Called per event now (full snapshot), so only persist when something actually changed.
+            var changed = false
             for (key, value) in props {
-                identity.userProperties[key] = JSONValue(any: value)
+                let jv = JSONValue(any: value)
+                if identity.userProperties[key] != jv {
+                    identity.userProperties[key] = jv
+                    changed = true
+                }
             }
-            persistProperties()
+            if changed { persistProperties() }
         }
     }
 
