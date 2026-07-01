@@ -14,6 +14,7 @@ final class IdentityStore {
 
     private let defaults: UserDefaults
     private let anonKey = "com.microsurveys.anonymousId"
+    private let propsKey = "com.microsurveys.userProperties"
     private let lock = NSLock()
     private var identity: MSIdentity
 
@@ -28,7 +29,21 @@ final class IdentityStore {
             anon = "anon_" + UUID().uuidString
             defaults.set(anon, forKey: anonKey)
         }
-        self.identity = MSIdentity(anonymousId: anon)
+        var restored = MSIdentity(anonymousId: anon)
+
+        // Restore the last-known user properties so audience matching works on launch even before
+        // this session re-sends an $identify (properties set in a prior session persist).
+        if let data = defaults.data(forKey: propsKey),
+           let props = try? JSONDecoder().decode([String: JSONValue].self, from: data) {
+            restored.userProperties = props
+        }
+        self.identity = restored
+    }
+
+    private func persistProperties() {
+        if let data = try? JSONEncoder().encode(identity.userProperties) {
+            defaults.set(data, forKey: propsKey)
+        }
     }
 
     /// Thread-safe snapshot for evaluation.
@@ -46,6 +61,7 @@ final class IdentityStore {
             for (key, value) in props {
                 identity.userProperties[key] = JSONValue(any: value)
             }
+            persistProperties()
         }
     }
 
@@ -57,6 +73,7 @@ final class IdentityStore {
             for (key, value) in props {
                 identity.userProperties[key] = JSONValue(any: value)
             }
+            persistProperties()
         }
     }
 }
