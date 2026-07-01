@@ -73,7 +73,11 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
             if #available(iOS 15.0, *), let sheet = sheetPresentationController {
                 sheet.detents = [.medium(), .large()]
                 sheet.prefersGrabberVisible = true
-                sheet.preferredCornerRadius = theme.cornerRadius
+                // Leave preferredCornerRadius unset to keep the system's device-native corner
+                // radius (matches the hardware). Only override when the PM set a custom radius.
+                if !theme.useNativeSheetCorners {
+                    sheet.preferredCornerRadius = theme.cornerRadius
+                }
             }
         } else {
             modalPresentationStyle = .overFullScreen

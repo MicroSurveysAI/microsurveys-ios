@@ -160,6 +160,14 @@ public final class MicroSurveysSDK {
         DispatchQueue.main.async { [weak self] in
             self?.presenter.theme = Presenter.makeTheme(from: project)
         }
+        // If the theme names a Google Font that isn't registered yet, fetch it at runtime
+        // (in memory — never bundled, never written to disk) and re-apply once it's available.
+        if let family = project?.font, family != "system", !family.isEmpty,
+           UIFont.fontNames(forFamilyName: family).isEmpty {
+            GoogleFontLoader.load(family: family) { [weak self] ok in
+                if ok { self?.applyCachedTheme() }
+            }
+        }
     }
 
     private func present(survey: Survey, trigger: Trigger, identity: MSIdentity) {

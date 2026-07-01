@@ -72,6 +72,9 @@ public struct SurveyTheme {
     public var position: SurveyPosition
     /// Text alignment for prompts and labels (`.natural` = leading).
     public var alignment: NSTextAlignment
+    /// When true (default), a bottom sheet keeps the system's device-native corner radius (which
+    /// matches the hardware's screen corners). Set false to override with `cornerRadius`.
+    public var useNativeSheetCorners: Bool
 
     public init(background: UIColor,
                 surface: UIColor,
@@ -95,7 +98,8 @@ public struct SurveyTheme {
                 shadowRadius: CGFloat = 24,
                 shadowOffset: CGSize = CGSize(width: 0, height: -4),
                 position: SurveyPosition = .bottom,
-                alignment: NSTextAlignment = .natural) {
+                alignment: NSTextAlignment = .natural,
+                useNativeSheetCorners: Bool = true) {
         self.background = background
         self.surface = surface
         self.text = text
@@ -119,17 +123,28 @@ public struct SurveyTheme {
         self.shadowOffset = shadowOffset
         self.position = position
         self.alignment = alignment
+        self.useNativeSheetCorners = useNativeSheetCorners
     }
 
-    /// Rebuild the fonts from a host-bundled family name (keeps sizes + Dynamic Type), falling back
-    /// to the system font per role if the family can't be resolved. Weight control is limited for
-    /// custom families — pass explicit `UIFont`s if you need exact weights.
+    /// Rebuild the fonts from a font family (keeps sizes + Dynamic Type), selecting the right weight
+    /// per role. The family is registered at runtime by `GoogleFontLoader` (fetched from Google Fonts,
+    /// in memory) or may be one the host app bundled itself. If it isn't registered yet, the system
+    /// font is kept and the SDK re-applies the theme once the fetch completes. For an exact custom
+    /// face, set the individual `*Font` fields directly instead.
     public mutating func applyFontFamily(_ family: String) {
-        func f(_ size: CGFloat, _ style: UIFont.TextStyle, _ fallbackWeight: UIFont.Weight) -> UIFont {
-            if let base = UIFont(name: family, size: size) {
-                return UIFontMetrics(forTextStyle: style).scaledFont(for: base)
-            }
-            return SurveyTheme.scaledFont(size, fallbackWeight, style)
+        // No registered faces for this family yet (still fetching, or unknown) → keep system fonts.
+        guard !UIFont.fontNames(forFamilyName: family).isEmpty else {
+            MSLog.debug("theme font '\(family)' not yet registered — using system font for now")
+            return
+        }
+
+        func f(_ size: CGFloat, _ style: UIFont.TextStyle, _ weight: UIFont.Weight) -> UIFont {
+            let descriptor = UIFontDescriptor(fontAttributes: [
+                .family: family,
+                .traits: [UIFontDescriptor.TraitKey.weight: weight],
+            ])
+            let base = UIFont(descriptor: descriptor, size: size)
+            return UIFontMetrics(forTextStyle: style).scaledFont(for: base)
         }
         promptFont = f(20, .title3, .semibold)
         bodyFont = f(16, .body, .regular)

@@ -110,9 +110,13 @@ extension Presenter {
         if let c = UIColor(msHex: project.secondaryText) { theme.secondaryText = c }
         if let c = UIColor(msHex: project.border)        { theme.border = c }
 
+        // cornerRadius present ⇒ the PM chose a custom radius (overrides the device-native sheet
+        // corner). Absent/null ⇒ keep native sheet corners; the default radius is still used for
+        // the dialog/iOS-14 card.
         if let radius = project.cornerRadius {
             theme.cornerRadius = CGFloat(radius)
             theme.controlCornerRadius = CGFloat(max(0, radius - 2)) // default if controlRadius omitted
+            theme.useNativeSheetCorners = false
         }
         if let cr = project.controlRadius { theme.controlCornerRadius = CGFloat(cr) }
         if let sp = project.spacing { theme.spacing = CGFloat(sp) }
