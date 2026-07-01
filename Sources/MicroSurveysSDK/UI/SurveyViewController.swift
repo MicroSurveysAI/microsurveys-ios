@@ -120,9 +120,11 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
         let baseTopInset = max(0, view.safeAreaInsets.top - additionalSafeAreaInsets.top)
         let baseBottomInset = max(0, view.safeAreaInsets.bottom - additionalSafeAreaInsets.bottom)
         let top = (hasProgress ? (pad + 44 + theme.spacing) : topInset) + baseTopInset
-        // Clamp the bottom inset so the on-screen keyboard (which inflates safeAreaInsets.bottom for
-        // a focused text field) doesn't balloon the detent and jump the sheet to full height.
-        let bottom = theme.spacing + theme.controlHeight + pad + min(baseBottomInset, 44)
+        // Gap below the button is max(pad, safeAreaBottom): on home-indicator devices the inset
+        // already provides the breathing room, so we don't add `pad` on top of it. Clamp the inset
+        // so the keyboard (which inflates safeAreaInsets.bottom for a focused field) can't balloon
+        // the detent and jump the sheet to full height.
+        let bottom = theme.spacing + theme.controlHeight + max(pad, min(baseBottomInset, 44))
         return top + contentHeight + bottom
     }
 
@@ -194,7 +196,10 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
                 card.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
                 card.leadingAnchor.constraint(equalTo: view.leadingAnchor),
                 card.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-                card.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor)
+                // Extend the card to the physical bottom (its surface fills under the home indicator);
+                // the button is padded above the safe area separately, so the bottom gap is
+                // max(pad, safeAreaBottom) rather than pad + safeAreaBottom.
+                card.bottomAnchor.constraint(equalTo: view.bottomAnchor)
             ])
         } else {
             card.layer.cornerRadius = theme.cornerRadius
@@ -341,6 +346,11 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
         // the button instead of opening a gap between the content and the button.
         let buttonBottomMax = primaryButton.bottomAnchor.constraint(
             lessThanOrEqualTo: card.bottomAnchor, constant: -pad)
+        // Never let the button run under the home indicator / safe area (or the keyboard, which
+        // raises the safe-area bottom). Combined with buttonBottomMax, the bottom gap becomes
+        // max(pad, safeAreaBottom) — so home-indicator devices don't get pad *plus* the inset.
+        let buttonBottomSafe = primaryButton.bottomAnchor.constraint(
+            lessThanOrEqualTo: view.safeAreaLayoutGuide.bottomAnchor)
         let buttonBottomPin = primaryButton.bottomAnchor.constraint(
             equalTo: card.bottomAnchor, constant: -pad)
         buttonBottomPin.priority = UILayoutPriority(800)
@@ -370,6 +380,7 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
             primaryButton.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: pad),
             primaryButton.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -pad),
             buttonBottomMax,
+            buttonBottomSafe,
             buttonBottomPin,
             primaryButton.heightAnchor.constraint(equalToConstant: theme.controlHeight)
         ])
