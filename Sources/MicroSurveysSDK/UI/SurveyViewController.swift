@@ -46,7 +46,7 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
     private let dimView = UIView()
     private let card = UIView()
     private let progressLabel = UILabel()
-    private let closeButton = UIButton(type: .close)
+    private let closeButton = UIButton(type: .system)
     private let promptLabel = UILabel()
     private let scrollView = UIScrollView()
     private let questionContainer = UIView()
@@ -197,14 +197,31 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
         progressLabel.textColor = theme.secondaryText
         progressLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        // Native system close button (gray circular ✕ / liquid glass on iOS 26). No custom styling —
-        // it carries its own native background and adapts to light/dark. Hidden for required surveys.
+        // Close button with a native material background that stays visible on every iOS version:
+        // Liquid Glass on iOS 26+, the system gray material before it. No custom colors from us.
+        let closeGlyph = UIImage(systemName: "xmark",
+                                 withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold))
+        if #available(iOS 26.0, *) {
+            var cfg = UIButton.Configuration.glass()
+            cfg.image = closeGlyph
+            cfg.cornerStyle = .capsule
+            closeButton.configuration = cfg
+        } else if #available(iOS 15.0, *) {
+            var cfg = UIButton.Configuration.gray()
+            cfg.image = closeGlyph
+            cfg.baseForegroundColor = .secondaryLabel
+            cfg.cornerStyle = .capsule
+            closeButton.configuration = cfg
+        } else {
+            closeButton.setImage(closeGlyph, for: .normal)
+            closeButton.tintColor = .secondaryLabel
+            closeButton.backgroundColor = .secondarySystemFill
+            closeButton.layer.cornerRadius = 15
+        }
         closeButton.accessibilityLabel = "Close survey"
         closeButton.isHidden = !canDismiss
         closeButton.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
         closeButton.translatesAutoresizingMaskIntoConstraints = false
-        closeButton.setContentHuggingPriority(.required, for: .horizontal)
-        closeButton.setContentHuggingPriority(.required, for: .vertical)
 
         // Prompt (per-question question text).
         promptLabel.font = theme.promptFont
@@ -272,6 +289,8 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
             // Header.
             closeButton.topAnchor.constraint(equalTo: card.topAnchor, constant: topInset),
             closeButton.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -pad),
+            closeButton.widthAnchor.constraint(equalToConstant: 30),
+            closeButton.heightAnchor.constraint(equalToConstant: 30),
             progressLabel.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor),
             progressLabel.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: pad),
 

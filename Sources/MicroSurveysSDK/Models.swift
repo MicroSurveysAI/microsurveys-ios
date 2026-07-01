@@ -203,6 +203,8 @@ public struct Survey: Codable, Equatable {
     /// Whether the respondent may dismiss without answering. `nil` ⇒ treat as dismissible.
     /// When false, the SDK hides the close button and blocks swipe/scrim dismissal.
     public let dismissible: Bool?
+    /// Per-survey presentation override: `"sheet"` | `"dialog"`. `nil` ⇒ inherit the project theme.
+    public let presentation: String?
 
     public init(id: String,
                 name: String,
@@ -213,7 +215,8 @@ public struct Survey: Codable, Equatable {
                 startsAt: String? = nil,
                 endsAt: String? = nil,
                 triggers: [Trigger]? = nil,
-                dismissible: Bool? = nil) {
+                dismissible: Bool? = nil,
+                presentation: String? = nil) {
         self.id = id
         self.name = name
         self.questions = questions
@@ -224,6 +227,7 @@ public struct Survey: Codable, Equatable {
         self.endsAt = endsAt
         self.triggers = triggers
         self.dismissible = dismissible
+        self.presentation = presentation
     }
 
     /// Questions sorted by their declared `order`, which is the order the

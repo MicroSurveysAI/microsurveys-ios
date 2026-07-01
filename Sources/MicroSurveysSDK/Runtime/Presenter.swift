@@ -43,7 +43,14 @@ final class Presenter {
             return false
         }
         MSLog.info("presenting '\(survey.name)'")
-        MicroSurveysUI.present(survey: survey, on: anchor, theme: theme) { result in
+        // Per-survey presentation override (falls back to the project theme's position).
+        var surveyTheme = theme
+        switch survey.presentation {
+        case "dialog", "center": surveyTheme.position = .center
+        case "sheet", "bottom":  surveyTheme.position = .bottom
+        default: break
+        }
+        MicroSurveysUI.present(survey: survey, on: anchor, theme: surveyTheme) { result in
             MSLog.info("survey '\(survey.name)' closed (completed=\(result.completed), dismissed=\(result.dismissed), answers=\(result.answers.count))")
             completion(result)
         }
