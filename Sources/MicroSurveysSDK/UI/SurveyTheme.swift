@@ -58,6 +58,17 @@ public struct SurveyTheme {
     public var buttonFont: UIFont
     public var chipFont: UIFont
 
+    // MARK: Prompt (title) typography
+    // These drive how the survey title/prompt renders. `promptFont` is rebuilt from size + weight
+    // (and the font family); line height + letter spacing are applied to the label as attributes.
+
+    public var promptFontSize: CGFloat
+    public var promptFontWeight: UIFont.Weight
+    /// Line-height multiple (1.0 = default single spacing).
+    public var promptLineHeightMultiple: CGFloat
+    /// Letter spacing (tracking) in points.
+    public var promptLetterSpacing: CGFloat
+
     // MARK: Shadow
 
     /// Subtle elevation under the card. Set `shadowOpacity` to 0 to disable.
@@ -93,6 +104,10 @@ public struct SurveyTheme {
                 captionFont: UIFont = SurveyTheme.scaledFont(13, .regular, .footnote),
                 buttonFont: UIFont = SurveyTheme.scaledFont(16, .semibold, .headline),
                 chipFont: UIFont = SurveyTheme.scaledFont(16, .medium, .body),
+                promptFontSize: CGFloat = 20,
+                promptFontWeight: UIFont.Weight = .semibold,
+                promptLineHeightMultiple: CGFloat = 1.1,
+                promptLetterSpacing: CGFloat = 0,
                 shadowColor: UIColor = .black,
                 shadowOpacity: Float = 0.18,
                 shadowRadius: CGFloat = 24,
@@ -117,6 +132,10 @@ public struct SurveyTheme {
         self.captionFont = captionFont
         self.buttonFont = buttonFont
         self.chipFont = chipFont
+        self.promptFontSize = promptFontSize
+        self.promptFontWeight = promptFontWeight
+        self.promptLineHeightMultiple = promptLineHeightMultiple
+        self.promptLetterSpacing = promptLetterSpacing
         self.shadowColor = shadowColor
         self.shadowOpacity = shadowOpacity
         self.shadowRadius = shadowRadius
@@ -146,7 +165,7 @@ public struct SurveyTheme {
             let base = UIFont(descriptor: descriptor, size: size)
             return UIFontMetrics(forTextStyle: style).scaledFont(for: base)
         }
-        promptFont = f(20, .title3, .semibold)
+        promptFont = f(promptFontSize, .title3, promptFontWeight)
         bodyFont = f(16, .body, .regular)
         captionFont = f(13, .footnote, .regular)
         buttonFont = f(16, .headline, .semibold)

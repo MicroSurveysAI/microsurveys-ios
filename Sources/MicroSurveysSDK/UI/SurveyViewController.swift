@@ -180,6 +180,8 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
 
     private func buildCardContents() {
         let pad = theme.spacing + 4
+        // Extra breathing room at the very top so the title/close button clear the sheet grabber.
+        let topInset = pad + 12
 
         // Header: progress label + close button.
         progressLabel.font = theme.captionFont
@@ -237,14 +239,14 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
         let hasProgress = questions.count > 1
         let scrollTop = hasProgress
             ? scrollView.topAnchor.constraint(equalTo: closeButton.bottomAnchor, constant: theme.spacing)
-            : scrollView.topAnchor.constraint(equalTo: card.topAnchor, constant: pad)
+            : scrollView.topAnchor.constraint(equalTo: card.topAnchor, constant: topInset)
         let contentTrailing = contentStack.trailingAnchor.constraint(
             equalTo: scrollView.frameLayoutGuide.trailingAnchor,
             constant: hasProgress ? -pad : -(pad + 34))
 
         NSLayoutConstraint.activate([
             // Header.
-            closeButton.topAnchor.constraint(equalTo: card.topAnchor, constant: pad),
+            closeButton.topAnchor.constraint(equalTo: card.topAnchor, constant: topInset),
             closeButton.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -pad),
             progressLabel.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor),
             progressLabel.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: pad),
@@ -281,6 +283,25 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
         }
     }
 
+    /// Sets the prompt text, applying line-height + letter-spacing via attributes when they differ
+    /// from the defaults (otherwise plain text, so Dynamic Type and wrapping behave normally).
+    private func setPromptText(_ text: String) {
+        if theme.promptLineHeightMultiple == 1 && theme.promptLetterSpacing == 0 {
+            promptLabel.attributedText = nil
+            promptLabel.text = text
+            return
+        }
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineHeightMultiple = theme.promptLineHeightMultiple
+        paragraph.alignment = theme.alignment
+        promptLabel.attributedText = NSAttributedString(string: text, attributes: [
+            .font: theme.promptFont,
+            .foregroundColor: theme.text,
+            .paragraphStyle: paragraph,
+            .kern: theme.promptLetterSpacing,
+        ])
+    }
+
     // MARK: Navigation
 
     private func showQuestion(at newIndex: Int, animated: Bool) {
@@ -303,7 +324,7 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
         ])
 
         // Update chrome.
-        promptLabel.text = question.prompt
+        setPromptText(question.prompt)
         progressLabel.text = questions.count > 1 ? "\(index + 1) of \(questions.count)" : nil
         let isLast = index == questions.count - 1
         primaryButton.setTitle(isLast ? "Submit" : "Next", for: .normal)

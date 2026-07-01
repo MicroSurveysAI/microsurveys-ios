@@ -127,10 +127,29 @@ extension Presenter {
         case "leading": theme.alignment = .natural
         default: break
         }
+
+        // Prompt (title) typography. Set size/weight first, then (re)build the prompt font — the
+        // family override below reuses the configured size/weight.
+        if let size = project.titleSize { theme.promptFontSize = CGFloat(size) }
+        if let weight = project.titleWeight { theme.promptFontWeight = fontWeight(weight) }
+        if let lh = project.titleLineHeight { theme.promptLineHeightMultiple = CGFloat(lh) }
+        if let ls = project.titleLetterSpacing { theme.promptLetterSpacing = CGFloat(ls) }
+        theme.promptFont = SurveyTheme.scaledFont(theme.promptFontSize, theme.promptFontWeight, .title3)
+
         if let family = project.font, family != "system", !family.isEmpty {
-            theme.applyFontFamily(family)
+            theme.applyFontFamily(family) // rebuilds promptFont at the configured size/weight
         }
         return theme
+    }
+
+    /// Maps a `titleWeight` string onto a `UIFont.Weight`; defaults to semibold.
+    private static func fontWeight(_ name: String) -> UIFont.Weight {
+        switch name.lowercased() {
+        case "regular": return .regular
+        case "medium": return .medium
+        case "bold": return .bold
+        default: return .semibold
+        }
     }
 }
 

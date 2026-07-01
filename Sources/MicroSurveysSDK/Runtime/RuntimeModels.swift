@@ -34,6 +34,14 @@ public struct ProjectTheme: Codable, Equatable {
     public let alignment: String?
     /// `"system"`/empty, or a host-bundled font family name.
     public let font: String?
+    // Prompt (title) typography.
+    public let titleSize: Double?
+    /// `"regular"` | `"medium"` | `"semibold"` | `"bold"`.
+    public let titleWeight: String?
+    /// Line-height multiple (1.0 = default single spacing).
+    public let titleLineHeight: Double?
+    /// Letter spacing (tracking) in points.
+    public let titleLetterSpacing: Double?
 }
 
 /// Used to pull the top-level `theme` object out of the config payload without
