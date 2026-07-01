@@ -13,14 +13,10 @@ import Foundation
 enum MSLog {
     enum Level: Int { case off = 0, info = 1, debug = 2 }
 
-    /// Default: verbose in DEBUG, off in release.
-    static var level: Level = {
-        #if DEBUG
-        return .debug
-        #else
-        return .off
-        #endif
-    }()
+    /// On by default so integration logs show without extra setup (this SDK is pre-launch).
+    /// `#if DEBUG` is unreliable for SwiftPM targets, so we don't gate on it — turn off in
+    /// production via `MicroSurveysSDK.loggingEnabled = false`.
+    static var level: Level = .debug
 
     /// High-signal lines: lifecycle, trigger decisions, presentation, network.
     static func info(_ message: @autoclosure () -> String) { emit(.info, message()) }
@@ -30,6 +26,7 @@ enum MSLog {
 
     private static func emit(_ threshold: Level, _ message: @autoclosure () -> String) {
         guard level.rawValue >= threshold.rawValue else { return }
-        print("[MicroSurveys] \(message())")
+        // NSLog (not print) so lines reliably surface in the Xcode console and Console.app.
+        NSLog("[MicroSurveys] %@", message())
     }
 }
