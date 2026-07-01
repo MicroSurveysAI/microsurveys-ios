@@ -96,12 +96,8 @@ final class Presenter {
 
 extension Presenter {
 
-    /// Best-effort map of the project theme onto a `SurveyTheme`, starting from
-    /// `.default` and overriding only the keys provided.
-    ///
-    /// - TODO: `position == "center"` is not honored — the MVP renderer is
-    ///   bottom-sheet only. `font` (a host-bundled family) is likewise not yet
-    ///   resolved; only `"system"` is supported today.
+    /// Map the dashboard-configured project theme onto a `SurveyTheme`, starting from `.default`
+    /// and overriding only the keys provided (colors, radii, spacing, position, alignment, font).
     static func makeTheme(from project: ProjectTheme?) -> SurveyTheme {
         var theme = SurveyTheme.default
         guard let project else { return theme }
@@ -113,10 +109,22 @@ extension Presenter {
         if let c = UIColor(msHex: project.text)          { theme.text = c }
         if let c = UIColor(msHex: project.secondaryText) { theme.secondaryText = c }
         if let c = UIColor(msHex: project.border)        { theme.border = c }
+
         if let radius = project.cornerRadius {
             theme.cornerRadius = CGFloat(radius)
-            // Keep control radius proportional but a touch tighter than the card.
-            theme.controlCornerRadius = CGFloat(max(0, radius - 2))
+            theme.controlCornerRadius = CGFloat(max(0, radius - 2)) // default if controlRadius omitted
+        }
+        if let cr = project.controlRadius { theme.controlCornerRadius = CGFloat(cr) }
+        if let sp = project.spacing { theme.spacing = CGFloat(sp) }
+
+        if project.position == "center" { theme.position = .center }
+        switch project.alignment {
+        case "center": theme.alignment = .center
+        case "leading": theme.alignment = .natural
+        default: break
+        }
+        if let family = project.font, family != "system", !family.isEmpty {
+            theme.applyFontFamily(family)
         }
         return theme
     }

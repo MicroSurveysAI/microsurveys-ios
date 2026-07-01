@@ -33,6 +33,7 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
 
     /// Whether we present inside a system sheet (iOS 15+) vs the custom card.
     private var usesSystemSheet: Bool {
+        guard theme.position == .bottom else { return false } // center → custom centered card
         if #available(iOS 15.0, *) { return true }
         return false
     }
@@ -137,23 +138,37 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
                 card.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor)
             ])
         } else {
-            // Custom bottom card: rounded top corners + subtle shadow.
             card.layer.cornerRadius = theme.cornerRadius
             card.layer.cornerCurve = .continuous
-            card.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
             card.layer.shadowColor = theme.shadowColor.cgColor
             card.layer.shadowOpacity = theme.shadowOpacity
             card.layer.shadowRadius = theme.shadowRadius
             card.layer.shadowOffset = theme.shadowOffset
-            let bottom = card.bottomAnchor.constraint(equalTo: view.bottomAnchor)
-            cardBottomConstraint = bottom
-            NSLayoutConstraint.activate([
-                card.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-                card.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-                card.topAnchor.constraint(greaterThanOrEqualTo: view.safeAreaLayoutGuide.topAnchor,
-                                          constant: 24),
-                bottom
-            ])
+
+            if theme.position == .center {
+                // Centered modal card: all corners rounded, inset from edges, vertically centered.
+                card.layer.maskedCorners = [
+                    .layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner,
+                ]
+                NSLayoutConstraint.activate([
+                    card.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+                    card.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+                    card.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+                    card.topAnchor.constraint(greaterThanOrEqualTo: view.safeAreaLayoutGuide.topAnchor, constant: 24),
+                    card.bottomAnchor.constraint(lessThanOrEqualTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -24),
+                ])
+            } else {
+                // Bottom card (iOS 14 fallback): rounded top corners, pinned to the bottom.
+                card.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+                let bottom = card.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+                cardBottomConstraint = bottom
+                NSLayoutConstraint.activate([
+                    card.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                    card.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+                    card.topAnchor.constraint(greaterThanOrEqualTo: view.safeAreaLayoutGuide.topAnchor, constant: 24),
+                    bottom,
+                ])
+            }
         }
 
         buildCardContents()
@@ -181,6 +196,7 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
         promptLabel.adjustsFontForContentSizeCategory = true
         promptLabel.textColor = theme.text
         promptLabel.numberOfLines = 0
+        promptLabel.textAlignment = theme.alignment
         promptLabel.translatesAutoresizingMaskIntoConstraints = false
 
         questionContainer.translatesAutoresizingMaskIntoConstraints = false
@@ -356,19 +372,32 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
 
     private func animateCardIn() {
         view.layoutIfNeeded()
-        let height = card.bounds.height
-        card.transform = CGAffineTransform(translationX: 0, y: height)
         dimView.alpha = 0
-        UIView.animate(withDuration: 0.32, delay: 0, options: [.curveEaseOut]) {
-            self.card.transform = .identity
-            self.dimView.alpha = 1
+        if theme.position == .center {
+            card.alpha = 0
+            card.transform = CGAffineTransform(scaleX: 0.94, y: 0.94)
+            UIView.animate(withDuration: 0.28, delay: 0, options: [.curveEaseOut]) {
+                self.card.alpha = 1
+                self.card.transform = .identity
+                self.dimView.alpha = 1
+            }
+        } else {
+            card.transform = CGAffineTransform(translationX: 0, y: card.bounds.height)
+            UIView.animate(withDuration: 0.32, delay: 0, options: [.curveEaseOut]) {
+                self.card.transform = .identity
+                self.dimView.alpha = 1
+            }
         }
     }
 
     private func animateCardOut(_ completion: @escaping () -> Void) {
-        let height = card.bounds.height
-        UIView.animate(withDuration: 0.26, delay: 0, options: [.curveEaseIn], animations: {
-            self.card.transform = CGAffineTransform(translationX: 0, y: height)
+        UIView.animate(withDuration: 0.24, delay: 0, options: [.curveEaseIn], animations: {
+            if self.theme.position == .center {
+                self.card.alpha = 0
+                self.card.transform = CGAffineTransform(scaleX: 0.96, y: 0.96)
+            } else {
+                self.card.transform = CGAffineTransform(translationX: 0, y: self.card.bounds.height)
+            }
             self.dimView.alpha = 0
         }, completion: { _ in completion() })
     }

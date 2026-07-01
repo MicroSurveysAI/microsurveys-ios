@@ -15,6 +15,9 @@
 #if canImport(UIKit)
 import UIKit
 
+/// Where the survey card sits on screen.
+public enum SurveyPosition { case bottom, center }
+
 public struct SurveyTheme {
 
     // MARK: Colors
@@ -63,6 +66,13 @@ public struct SurveyTheme {
     public var shadowRadius: CGFloat
     public var shadowOffset: CGSize
 
+    // MARK: Layout
+
+    /// Where the survey card is anchored on screen.
+    public var position: SurveyPosition
+    /// Text alignment for prompts and labels (`.natural` = leading).
+    public var alignment: NSTextAlignment
+
     public init(background: UIColor,
                 surface: UIColor,
                 text: UIColor,
@@ -83,7 +93,9 @@ public struct SurveyTheme {
                 shadowColor: UIColor = .black,
                 shadowOpacity: Float = 0.18,
                 shadowRadius: CGFloat = 24,
-                shadowOffset: CGSize = CGSize(width: 0, height: -4)) {
+                shadowOffset: CGSize = CGSize(width: 0, height: -4),
+                position: SurveyPosition = .bottom,
+                alignment: NSTextAlignment = .natural) {
         self.background = background
         self.surface = surface
         self.text = text
@@ -105,6 +117,25 @@ public struct SurveyTheme {
         self.shadowOpacity = shadowOpacity
         self.shadowRadius = shadowRadius
         self.shadowOffset = shadowOffset
+        self.position = position
+        self.alignment = alignment
+    }
+
+    /// Rebuild the fonts from a host-bundled family name (keeps sizes + Dynamic Type), falling back
+    /// to the system font per role if the family can't be resolved. Weight control is limited for
+    /// custom families — pass explicit `UIFont`s if you need exact weights.
+    public mutating func applyFontFamily(_ family: String) {
+        func f(_ size: CGFloat, _ style: UIFont.TextStyle, _ fallbackWeight: UIFont.Weight) -> UIFont {
+            if let base = UIFont(name: family, size: size) {
+                return UIFontMetrics(forTextStyle: style).scaledFont(for: base)
+            }
+            return SurveyTheme.scaledFont(size, fallbackWeight, style)
+        }
+        promptFont = f(20, .title3, .semibold)
+        bodyFont = f(16, .body, .regular)
+        captionFont = f(13, .footnote, .regular)
+        buttonFont = f(16, .headline, .semibold)
+        chipFont = f(16, .body, .medium)
     }
 
     // MARK: Default theme

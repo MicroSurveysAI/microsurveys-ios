@@ -26,11 +26,13 @@ public struct ProjectTheme: Codable, Equatable {
     public let secondaryText: String?
     public let border: String?
     public let cornerRadius: Double?
-    /// `"bottom"` | `"center"`. The MVP renderer is bottom-sheet only; `center`
-    /// is recorded but not yet honored (TODO in Presenter).
+    public let controlRadius: Double?
+    public let spacing: Double?
+    /// `"bottom"` | `"center"`.
     public let position: String?
-    /// `"system"` or a host-bundled font family name. Custom families are not
-    /// yet resolved by the renderer (TODO in Presenter).
+    /// `"leading"` | `"center"` — text alignment of the survey content.
+    public let alignment: String?
+    /// `"system"`/empty, or a host-bundled font family name.
     public let font: String?
 }
 
