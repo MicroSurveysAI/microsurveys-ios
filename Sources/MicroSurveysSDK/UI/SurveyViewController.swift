@@ -54,6 +54,12 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
 
     private var cardBottomConstraint: NSLayoutConstraint?
 
+    // Captured for the self-sizing sheet detent (iOS 16+): the scrolling content + its metrics.
+    private let contentStack = UIStackView()
+    private var pad: CGFloat = 0
+    private var topInset: CGFloat = 0
+    private var hasProgress = false
+
     // MARK: Init
 
     public init(survey: Survey,
@@ -73,14 +79,21 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
     private func configurePresentation() {
         if usesSystemSheet {
             modalPresentationStyle = .pageSheet
-            if #available(iOS 15.0, *), let sheet = sheetPresentationController {
+            if #available(iOS 16.0, *), let sheet = sheetPresentationController {
+                // Self-sizing: one custom detent that fits the content height (no medium/large, so
+                // no empty space — the sheet is exactly as tall as the survey needs).
+                let fit = UISheetPresentationController.Detent.custom(identifier: .init("msContent")) { [weak self] context in
+                    guard let self else { return context.maximumDetentValue }
+                    return min(self.measuredContentHeight(), context.maximumDetentValue)
+                }
+                sheet.detents = [fit]
+                sheet.prefersGrabberVisible = true
+                if !theme.useNativeSheetCorners { sheet.preferredCornerRadius = theme.cornerRadius }
+            } else if #available(iOS 15.0, *), let sheet = sheetPresentationController {
+                // iOS 15 has no custom detents — fall back to the system medium/large.
                 sheet.detents = [.medium(), .large()]
                 sheet.prefersGrabberVisible = true
-                // Leave preferredCornerRadius unset to keep the system's device-native corner
-                // radius (matches the hardware). Only override when the PM set a custom radius.
-                if !theme.useNativeSheetCorners {
-                    sheet.preferredCornerRadius = theme.cornerRadius
-                }
+                if !theme.useNativeSheetCorners { sheet.preferredCornerRadius = theme.cornerRadius }
             }
         } else {
             modalPresentationStyle = .overFullScreen
@@ -89,6 +102,21 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
         presentationController?.delegate = self
         // Required (non-dismissible) surveys can't be swiped/pulled away.
         isModalInPresentation = !canDismiss
+    }
+
+    /// The natural height the sheet should take to fit the survey content (chrome + scrollable
+    /// content + button + safe-area insets). Used by the self-sizing custom detent on iOS 16+.
+    @available(iOS 16.0, *)
+    private func measuredContentHeight() -> CGFloat {
+        let width = view.bounds.width > 0 ? view.bounds.width : UIScreen.main.bounds.width
+        let contentWidth = max(1, width - pad * 2)
+        let contentHeight = contentStack.systemLayoutSizeFitting(
+            CGSize(width: contentWidth, height: 0),
+            withHorizontalFittingPriority: .required,
+            verticalFittingPriority: .fittingSizeLevel).height
+        let top = (hasProgress ? (topInset + 30 + theme.spacing) : topInset) + view.safeAreaInsets.top
+        let bottom = theme.spacing + theme.controlHeight + pad + view.safeAreaInsets.bottom
+        return top + contentHeight + bottom
     }
 
     // MARK: Lifecycle
@@ -187,9 +215,9 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
     }
 
     private func buildCardContents() {
-        let pad = theme.spacing + 4
+        pad = theme.spacing + 4
         // Extra breathing room at the very top so the title/close button clear the sheet grabber.
-        let topInset = pad + 12
+        topInset = pad + 12
 
         // Header: progress label + close button.
         progressLabel.font = theme.captionFont
@@ -250,7 +278,8 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.keyboardDismissMode = .interactive
         scrollView.showsVerticalScrollIndicator = false
-        let contentStack = UIStackView(arrangedSubviews: [promptContainer, questionContainer])
+        contentStack.addArrangedSubview(promptContainer)
+        contentStack.addArrangedSubview(questionContainer)
         contentStack.axis = .vertical
         contentStack.spacing = theme.spacing + 8
         contentStack.translatesAutoresizingMaskIntoConstraints = false
@@ -278,7 +307,7 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
         // is no header text, so start the content at the very top (no empty band above the prompt);
         // the close-button corner is cleared by the prompt's own right inset (above), while the
         // answer controls stay full width.
-        let hasProgress = questions.count > 1
+        hasProgress = questions.count > 1
         let scrollTop = hasProgress
             ? scrollView.topAnchor.constraint(equalTo: closeButton.bottomAnchor, constant: theme.spacing)
             : scrollView.topAnchor.constraint(equalTo: card.topAnchor, constant: topInset)
@@ -384,6 +413,13 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
             })
         } else {
             outgoing?.removeFromSuperview()
+        }
+
+        // Re-fit the self-sizing sheet to this question's content (multi-step surveys).
+        if #available(iOS 16.0, *), usesSystemSheet {
+            sheetPresentationController?.animateChanges {
+                sheetPresentationController?.invalidateDetents()
+            }
         }
     }
 
