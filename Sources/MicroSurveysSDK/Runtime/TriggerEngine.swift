@@ -84,7 +84,7 @@ final class TriggerEngine {
                 // (4) audience
                 if let audience = survey.audienceMatch,
                    !MatchEvaluator.audienceMatches(audience, userProperties: identity.userProperties) {
-                    MSLog.info("  ✗ skip '\(survey.name)': audience mismatch")
+                    MSLog.info("  ✗ skip '\(survey.name)': audience mismatch — need \(audience), have user-property keys \(identity.userProperties.keys.sorted())")
                     continue
                 }
                 // (5) sampling (sticky)
