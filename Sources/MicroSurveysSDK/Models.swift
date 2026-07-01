@@ -205,6 +205,8 @@ public struct Survey: Codable, Equatable {
     public let dismissible: Bool?
     /// Per-survey presentation override: `"sheet"` | `"dialog"`. `nil` ⇒ inherit the project theme.
     public let presentation: String?
+    /// Custom completion message shown briefly before auto-dismiss. `nil` ⇒ SDK default.
+    public let successMessage: String?
 
     public init(id: String,
                 name: String,
@@ -216,7 +218,8 @@ public struct Survey: Codable, Equatable {
                 endsAt: String? = nil,
                 triggers: [Trigger]? = nil,
                 dismissible: Bool? = nil,
-                presentation: String? = nil) {
+                presentation: String? = nil,
+                successMessage: String? = nil) {
         self.id = id
         self.name = name
         self.questions = questions
@@ -228,6 +231,7 @@ public struct Survey: Codable, Equatable {
         self.triggers = triggers
         self.dismissible = dismissible
         self.presentation = presentation
+        self.successMessage = successMessage
     }
 
     /// Questions sorted by their declared `order`, which is the order the
