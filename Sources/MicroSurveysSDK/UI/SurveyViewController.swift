@@ -84,7 +84,11 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
                 // no empty space — the sheet is exactly as tall as the survey needs).
                 let fit = UISheetPresentationController.Detent.custom(identifier: .init("msContent")) { [weak self] context in
                     guard let self else { return context.maximumDetentValue }
-                    return min(self.measuredContentHeight(), context.maximumDetentValue)
+                    let h = self.measuredContentHeight()
+                    // Guard against a non-finite / non-positive measurement (possible if the resolver
+                    // runs mid-transition): a NaN or <= 0 detent value crashes UIKit.
+                    guard h.isFinite, h > 0 else { return context.maximumDetentValue }
+                    return min(h, context.maximumDetentValue)
                 }
                 sheet.detents = [fit]
                 sheet.prefersGrabberVisible = true
@@ -461,15 +465,23 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
             }, completion: { [weak self] _ in
                 outgoing?.removeFromSuperview()
                 self?.currentQuestionView?.activate()
+                // Re-fit the sheet only AFTER the outgoing view is removed — so the detent is measured
+                // with a single question view in the container (two fully-pinned views over-constrain
+                // the height) and after an open-text step's keyboard has settled. Invalidating detents
+                // mid-transition / mid-keyboard-dismiss is what crashed the sheet.
+                self?.refitSheet()
             })
         } else {
             outgoing?.removeFromSuperview()
+            refitSheet()
         }
+    }
 
-        // Re-fit the self-sizing sheet to this question's content (multi-step surveys).
+    /// Re-resolve the self-sizing sheet detent for the current content (iOS 16+ system sheet only).
+    private func refitSheet() {
         if #available(iOS 16.0, *), usesSystemSheet {
-            sheetPresentationController?.animateChanges {
-                sheetPresentationController?.invalidateDetents()
+            sheetPresentationController?.animateChanges { [weak self] in
+                self?.sheetPresentationController?.invalidateDetents()
             }
         }
     }
