@@ -43,7 +43,7 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
     private let dimView = UIView()
     private let card = UIView()
     private let progressLabel = UILabel()
-    private let closeButton = UIButton(type: .system)
+    private let closeButton = UIButton(type: .close)
     private let promptLabel = UILabel()
     private let scrollView = UIScrollView()
     private let questionContainer = UIView()
@@ -187,13 +187,14 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
         progressLabel.textColor = theme.secondaryText
         progressLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        let closeConfig = UIImage.SymbolConfiguration(pointSize: 16, weight: .semibold)
-        closeButton.setImage(UIImage(systemName: "xmark", withConfiguration: closeConfig), for: .normal)
-        closeButton.tintColor = theme.secondaryText
+        // Native system close button (the gray circular "✕") — matches iOS card/sheet styling and
+        // adapts to light/dark automatically. Uses its own intrinsic size (~30pt).
         closeButton.accessibilityLabel = "Close survey"
         closeButton.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
         closeButton.translatesAutoresizingMaskIntoConstraints = false
         closeButton.setContentHuggingPriority(.required, for: .horizontal)
+        closeButton.setContentHuggingPriority(.required, for: .vertical)
+        closeButton.setContentCompressionResistancePriority(.required, for: .horizontal)
 
         // Prompt (per-question question text).
         promptLabel.font = theme.promptFont
@@ -245,8 +246,6 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
             // Header.
             closeButton.topAnchor.constraint(equalTo: card.topAnchor, constant: pad),
             closeButton.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -pad),
-            closeButton.widthAnchor.constraint(equalToConstant: 28),
-            closeButton.heightAnchor.constraint(equalToConstant: 28),
             progressLabel.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor),
             progressLabel.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: pad),
 
