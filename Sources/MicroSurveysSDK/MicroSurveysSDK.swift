@@ -173,12 +173,17 @@ public final class MicroSurveysSDK {
                                             endUserId: endUserId,
                                             shownAt: shownAt,
                                             dismissed: result.dismissed)
-            self.apiClient.recordResponse(surveyId: survey.id,
-                                          endUserId: endUserId,
-                                          completed: result.completed,
-                                          submittedAt: Date(),
-                                          userProps: userProps,
-                                          answers: result.answers)
+            // A pure dismissal (closed with no answers) is an impression, NOT a response —
+            // don't submit one, or it inflates the response count. Partial multi-step answers
+            // (answered ≥1, then dropped) still count.
+            if result.completed || !result.answers.isEmpty {
+                self.apiClient.recordResponse(surveyId: survey.id,
+                                              endUserId: endUserId,
+                                              completed: result.completed,
+                                              submittedAt: Date(),
+                                              userProps: userProps,
+                                              answers: result.answers)
+            }
         }
     }
     #else
