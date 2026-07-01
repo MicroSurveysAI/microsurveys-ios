@@ -116,12 +116,16 @@ final class APIClient {
         let (data, response) = try await send(request)
         guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
 
-        if http.statusCode == 304 { return .notModified }
+        if http.statusCode == 304 {
+            MSLog.info("config: 304 Not Modified (using cache)")
+            return .notModified
+        }
         guard (200..<300).contains(http.statusCode) else { throw APIError.http(http.statusCode) }
 
         let config = try JSONDecoder().decode(SDKConfig.self, from: data)
         let theme = (try? JSONDecoder().decode(ThemeEnvelope.self, from: data))?.theme
         let newETag = http.value(forHTTPHeaderField: "ETag")
+        MSLog.info("config: fetched \(config.surveys.count) active survey(s): \(config.surveys.map { $0.name })")
         return .config(rawData: data, config: config, theme: theme, etag: newETag)
     }
 
@@ -139,6 +143,7 @@ final class APIClient {
                                         endUserId: endUserId,
                                         shownAt: MSTime.string(from: shownAt),
                                         dismissed: dismissed)
+        MSLog.info("impression queued (survey=\(surveyId), dismissed=\(dismissed))")
         enqueue(path: "/api/sdk/impressions", value: ImpressionBatch(impressions: [payload]))
     }
 
@@ -156,6 +161,7 @@ final class APIClient {
                                       submittedAt: MSTime.string(from: submittedAt),
                                       userProps: userProps,
                                       answers: answers)
+        MSLog.info("response queued (survey=\(surveyId), completed=\(completed), answers=\(answers.count))")
         enqueue(path: "/api/sdk/responses", value: ResponseBatch(responses: [payload]))
     }
 
@@ -201,6 +207,7 @@ final class APIClient {
 
         let (_, response) = try await send(request)
         guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
+        MSLog.info("POST \(path) -> \(http.statusCode)")
         // 4xx (except 429) are permanent for this body; drop by treating as
         // success so we don't wedge the queue. 429/5xx → throw to retry later.
         if http.statusCode == 429 || (500..<600).contains(http.statusCode) {

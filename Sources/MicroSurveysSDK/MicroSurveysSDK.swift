@@ -85,6 +85,7 @@ public final class MicroSurveysSDK {
     /// impressions/responses, and refreshes the config from the network.
     /// Safe to call once early in app launch.
     public func start() {
+        MSLog.info("start: key=\(apiKey.prefix(11))…, base=\(apiBaseURL.absoluteString)")
         apiClient.flush()
         refreshConfig()
     }
@@ -105,6 +106,7 @@ public final class MicroSurveysSDK {
                 }
             } catch {
                 // Keep the cached config; the SDK still works offline.
+                MSLog.info("config fetch failed (\(error)); keeping cached config")
             }
         }
     }
@@ -191,6 +193,18 @@ public final class MicroSurveysSDK {
     private func applyCachedTheme() {}
     private func present(survey: Survey, trigger: Trigger, identity: MSIdentity) {}
     #endif
+}
+
+// MARK: - Logging
+
+public extension MicroSurveysSDK {
+    /// Verbose SDK logging to the Xcode console. Defaults to ON in DEBUG builds and OFF in release.
+    /// Filter the console by "[MicroSurveys]" to see events, trigger decisions (and skip reasons),
+    /// presentation, and network calls.
+    static var loggingEnabled: Bool {
+        get { MSLog.level != .off }
+        set { MSLog.level = newValue ? .debug : .off }
+    }
 }
 
 // MARK: - MSEventForwarding

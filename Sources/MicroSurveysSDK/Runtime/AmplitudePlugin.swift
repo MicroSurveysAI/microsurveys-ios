@@ -42,6 +42,7 @@ public final class MicroSurveysAmplitudePlugin: Plugin {
         self.amplitude = amplitude
         // Capture whatever identity is known at registration time.
         refreshIdentity(from: nil)
+        MSLog.info("Amplitude plugin registered (enrichment)")
     }
 
     public func execute(event: BaseEvent) -> BaseEvent? {
@@ -53,6 +54,7 @@ public final class MicroSurveysAmplitudePlugin: Plugin {
         // match host-defined triggers, but are cheap to pass through.
         let name = event.eventType
         let properties = event.eventProperties ?? [:]
+        MSLog.debug("amplitude event '\(name)'\(properties.isEmpty ? "" : " \(properties)")")
         forwarder?.forwardEvent(name: name, properties: properties)
 
         // Pass-through: never modify or drop the event.

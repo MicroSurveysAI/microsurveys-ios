@@ -70,21 +70,33 @@ final class TriggerEngine {
                 guard satisfied else { continue }
 
                 let occurrence = state.triggers[trigger.id]?.satisfiedCount ?? 0
+                MSLog.info("trigger matched for '\(survey.name)' (occurrence \(occurrence)) on event '\(name)'")
 
                 // (1) window
-                guard isWithinWindow(survey: survey, nowDate: nowDate) else { continue }
+                guard isWithinWindow(survey: survey, nowDate: nowDate) else {
+                    MSLog.info("  ✗ skip '\(survey.name)': outside start/end window"); continue
+                }
                 // (3) frequency
-                guard passesFrequency(trigger: trigger, occurrence: occurrence) else { continue }
+                guard passesFrequency(trigger: trigger, occurrence: occurrence) else {
+                    MSLog.info("  ✗ skip '\(survey.name)': frequency (fireEvery=\(trigger.fireEvery), warmup=\(trigger.warmupCount), occ=\(occurrence))")
+                    continue
+                }
                 // (4) audience
                 if let audience = survey.audienceMatch,
                    !MatchEvaluator.audienceMatches(audience, userProperties: identity.userProperties) {
+                    MSLog.info("  ✗ skip '\(survey.name)': audience mismatch")
                     continue
                 }
                 // (5) sampling (sticky)
-                guard passesSampling(survey: survey, endUserId: endUserId, state: &state) else { continue }
+                guard passesSampling(survey: survey, endUserId: endUserId, state: &state) else {
+                    MSLog.info("  ✗ skip '\(survey.name)': not in sample (\(survey.samplePercent ?? 100)%)"); continue
+                }
                 // (6) cap
-                guard passesCap(survey: survey, state: state, nowDate: nowDate) else { continue }
+                guard passesCap(survey: survey, state: state, nowDate: nowDate) else {
+                    MSLog.info("  ✗ skip '\(survey.name)': frequency cap (maxPerUserDays=\(survey.maxPerUserDays ?? 0))"); continue
+                }
 
+                MSLog.info("  ✓ '\(survey.name)' eligible — showing in \(max(0, trigger.delaySeconds))s")
                 scheduleShow(survey: survey, trigger: trigger, identity: identity)
             }
         }
@@ -161,7 +173,10 @@ final class TriggerEngine {
 
             // Re-check the cap at fire time (another survey may have shown during
             // the delay).
-            guard self.passesCap(survey: survey, state: state, nowDate: nowDate) else { return }
+            guard self.passesCap(survey: survey, state: state, nowDate: nowDate) else {
+                MSLog.info("  ✗ '\(survey.name)' suppressed at fire time: cap")
+                return
+            }
 
             // Record the show now so the cap holds even before the impression
             // round-trips.

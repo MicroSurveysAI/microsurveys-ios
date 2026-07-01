@@ -27,10 +27,24 @@ final class Presenter {
     @discardableResult
     func present(survey: Survey, completion: @escaping (SurveyResult?) -> Void) -> Bool {
         guard let anchor = presentationAnchor?() ?? Presenter.topViewController() else {
+            MSLog.info("present skipped '\(survey.name)': no view controller found to present from")
             completion(nil)
             return false
         }
+        // One survey at a time. If a survey is already on screen, or the anchor is already
+        // presenting / mid-transition, don't try to stack another — UIKit would silently drop it,
+        // making presentation nondeterministic. Skip deterministically instead.
+        if anchor is SurveyViewController
+            || anchor.presentedViewController != nil
+            || anchor.isBeingPresented
+            || anchor.isBeingDismissed {
+            MSLog.info("present skipped '\(survey.name)': a survey is already on screen (one at a time)")
+            completion(nil)
+            return false
+        }
+        MSLog.info("presenting '\(survey.name)'")
         MicroSurveysUI.present(survey: survey, on: anchor, theme: theme) { result in
+            MSLog.info("survey '\(survey.name)' closed (completed=\(result.completed), dismissed=\(result.dismissed), answers=\(result.answers.count))")
             completion(result)
         }
         return true
