@@ -46,7 +46,7 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
     private let dimView = UIView()
     private let card = UIView()
     private let progressLabel = UILabel()
-    private let closeButton = UIButton(type: .system)
+    private let closeButton = UIButton(type: .close)
     private let promptLabel = UILabel()
     private let scrollView = UIScrollView()
     private let questionContainer = UIView()
@@ -197,19 +197,14 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
         progressLabel.textColor = theme.secondaryText
         progressLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        // Close button: a filled circular "✕" that clearly reads as a button and stays visible on any
-        // surface (mirrors the iOS system close button). Hidden entirely for required surveys.
-        closeButton.setImage(
-            UIImage(systemName: "xmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .bold)),
-            for: .normal)
-        closeButton.tintColor = theme.secondaryText
-        closeButton.backgroundColor = theme.secondaryText.withAlphaComponent(0.12)
-        closeButton.layer.cornerRadius = 15
-        closeButton.layer.cornerCurve = .continuous
+        // Native system close button (gray circular ✕ / liquid glass on iOS 26). No custom styling —
+        // it carries its own native background and adapts to light/dark. Hidden for required surveys.
         closeButton.accessibilityLabel = "Close survey"
         closeButton.isHidden = !canDismiss
         closeButton.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
         closeButton.translatesAutoresizingMaskIntoConstraints = false
+        closeButton.setContentHuggingPriority(.required, for: .horizontal)
+        closeButton.setContentHuggingPriority(.required, for: .vertical)
 
         // Prompt (per-question question text).
         promptLabel.font = theme.promptFont
@@ -277,8 +272,6 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
             // Header.
             closeButton.topAnchor.constraint(equalTo: card.topAnchor, constant: topInset),
             closeButton.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -pad),
-            closeButton.widthAnchor.constraint(equalToConstant: 30),
-            closeButton.heightAnchor.constraint(equalToConstant: 30),
             progressLabel.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor),
             progressLabel.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: pad),
 
