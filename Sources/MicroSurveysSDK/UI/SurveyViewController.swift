@@ -230,6 +230,17 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
         card.addSubview(scrollView)
         card.addSubview(primaryButton)
 
+        // The "1 of N" progress only exists for multi-question surveys. For a single question there
+        // is no header text, so start the content at the very top (no empty band above the prompt)
+        // and reserve the top-right corner for the close button so the prompt doesn't run under it.
+        let hasProgress = questions.count > 1
+        let scrollTop = hasProgress
+            ? scrollView.topAnchor.constraint(equalTo: closeButton.bottomAnchor, constant: theme.spacing)
+            : scrollView.topAnchor.constraint(equalTo: card.topAnchor, constant: pad)
+        let contentTrailing = contentStack.trailingAnchor.constraint(
+            equalTo: scrollView.frameLayoutGuide.trailingAnchor,
+            constant: hasProgress ? -pad : -(pad + 34))
+
         NSLayoutConstraint.activate([
             // Header.
             closeButton.topAnchor.constraint(equalTo: card.topAnchor, constant: pad),
@@ -239,8 +250,8 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
             progressLabel.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor),
             progressLabel.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: pad),
 
-            // Scrollable content.
-            scrollView.topAnchor.constraint(equalTo: closeButton.bottomAnchor, constant: theme.spacing),
+            // Scrollable content (top anchor computed above).
+            scrollTop,
             scrollView.leadingAnchor.constraint(equalTo: card.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: card.trailingAnchor),
 
@@ -248,8 +259,7 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
             contentStack.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor),
             contentStack.leadingAnchor.constraint(equalTo: scrollView.frameLayoutGuide.leadingAnchor,
                                                   constant: pad),
-            contentStack.trailingAnchor.constraint(equalTo: scrollView.frameLayoutGuide.trailingAnchor,
-                                                   constant: -pad),
+            contentTrailing,
 
             // Primary button pinned at the bottom.
             primaryButton.topAnchor.constraint(equalTo: scrollView.bottomAnchor, constant: theme.spacing),
