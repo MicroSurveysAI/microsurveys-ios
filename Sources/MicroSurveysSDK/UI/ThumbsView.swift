@@ -14,8 +14,8 @@ public final class ThumbsView: QuestionBaseView {
     private enum Side { case up, down }
     private var selected: Side?
 
-    private lazy var upButton = makeButton(symbol: "hand.thumbsup", label: "Thumbs up")
-    private lazy var downButton = makeButton(symbol: "hand.thumbsdown", label: "Thumbs down")
+    private lazy var upButton = makeButton(emoji: "👍", label: "Thumbs up")
+    private lazy var downButton = makeButton(emoji: "👎", label: "Thumbs down")
 
     public override func setUp() {
         upButton.addTarget(self, action: #selector(upTapped), for: .touchUpInside)
@@ -41,10 +41,11 @@ public final class ThumbsView: QuestionBaseView {
         refresh()
     }
 
-    private func makeButton(symbol: String, label: String) -> UIButton {
+    private func makeButton(emoji: String, label: String) -> UIButton {
         let b = UIButton(type: .system)
-        let config = UIImage.SymbolConfiguration(pointSize: 28, weight: .regular)
-        b.setImage(UIImage(systemName: symbol, withConfiguration: config), for: .normal)
+        // Native emoji reads better than the SF Symbol hand glyphs.
+        b.setTitle(emoji, for: .normal)
+        b.titleLabel?.font = .systemFont(ofSize: 32)
         b.accessibilityLabel = label
         b.layer.cornerRadius = theme.controlCornerRadius
         b.layer.cornerCurve = .continuous
