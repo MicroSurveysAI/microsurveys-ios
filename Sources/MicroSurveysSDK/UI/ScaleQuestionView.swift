@@ -40,12 +40,31 @@ open class ScaleQuestionView: QuestionBaseView {
             chip.addTarget(self, action: #selector(chipTapped(_:)), for: .touchUpInside)
             return chip
         }
-        flow.alignment = .center
-        flow.itemSpacing = 8
-        flow.lineSpacing = 8
-        flow.setItems(chips)
-        flow.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(flow)
+
+        // Compact scales (≤7, e.g. CES 1–7) stretch to fill the full width like a segmented control;
+        // wider scales (NPS 0–10) wrap via the flow layout so the chips don't get too cramped.
+        let container: UIView
+        if chips.count <= 7 {
+            let row = UIStackView(arrangedSubviews: chips)
+            row.axis = .horizontal
+            row.distribution = .fillEqually
+            row.spacing = 8
+            row.translatesAutoresizingMaskIntoConstraints = false
+            chips.forEach {
+                $0.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+                $0.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+                $0.heightAnchor.constraint(equalToConstant: theme.controlHeight).isActive = true
+            }
+            container = row
+        } else {
+            flow.alignment = .center
+            flow.itemSpacing = 8
+            flow.lineSpacing = 8
+            flow.setItems(chips)
+            flow.translatesAutoresizingMaskIntoConstraints = false
+            container = flow
+        }
+        addSubview(container)
 
         // End labels (e.g. "Very difficult" … "Very easy").
         labelsRow.axis = .horizontal
@@ -64,20 +83,20 @@ open class ScaleQuestionView: QuestionBaseView {
         }
 
         NSLayoutConstraint.activate([
-            flow.topAnchor.constraint(equalTo: topAnchor),
-            flow.leadingAnchor.constraint(equalTo: leadingAnchor),
-            flow.trailingAnchor.constraint(equalTo: trailingAnchor)
+            container.topAnchor.constraint(equalTo: topAnchor),
+            container.leadingAnchor.constraint(equalTo: leadingAnchor),
+            container.trailingAnchor.constraint(equalTo: trailingAnchor)
         ])
 
         if hasLabels {
             NSLayoutConstraint.activate([
-                labelsRow.topAnchor.constraint(equalTo: flow.bottomAnchor, constant: 10),
+                labelsRow.topAnchor.constraint(equalTo: container.bottomAnchor, constant: 10),
                 labelsRow.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2),
                 labelsRow.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -2),
                 labelsRow.bottomAnchor.constraint(equalTo: bottomAnchor)
             ])
         } else {
-            flow.bottomAnchor.constraint(equalTo: bottomAnchor).isActive = true
+            container.bottomAnchor.constraint(equalTo: bottomAnchor).isActive = true
         }
     }
 

@@ -28,6 +28,10 @@ public struct ProjectTheme: Codable, Equatable {
     public let cornerRadius: Double?
     public let controlRadius: Double?
     public let spacing: Double?
+    /// Height of tappable controls (submit button, option rows, scale chips), in points.
+    public let controlHeight: Double?
+    /// Overall text-size multiplier applied to body/option/button/caption text.
+    public let textScale: Double?
     /// `"bottom"` | `"center"`.
     public let position: String?
     /// `"leading"` | `"center"` — text alignment of the survey content.

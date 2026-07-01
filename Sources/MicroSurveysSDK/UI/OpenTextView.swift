@@ -91,6 +91,11 @@ public final class OpenTextView: QuestionBaseView, UITextViewDelegate {
         counterLabel.text = "\(textView.text.count)/\(maxLength)"
     }
 
+    /// Auto-focus the field (and raise the keyboard) as soon as the survey shows it.
+    public override func activate() {
+        textView.becomeFirstResponder()
+    }
+
     // MARK: UITextViewDelegate
 
     public func textView(_ textView: UITextView,

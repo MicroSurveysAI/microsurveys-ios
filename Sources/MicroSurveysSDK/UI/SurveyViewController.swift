@@ -38,12 +38,15 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
         return false
     }
 
+    /// Whether the respondent may close/dismiss without answering (survey-level; default true).
+    private var canDismiss: Bool { survey.dismissible ?? true }
+
     // MARK: Views
 
     private let dimView = UIView()
     private let card = UIView()
     private let progressLabel = UILabel()
-    private let closeButton = UIButton(type: .close)
+    private let closeButton = UIButton(type: .system)
     private let promptLabel = UILabel()
     private let scrollView = UIScrollView()
     private let questionContainer = UIView()
@@ -84,6 +87,8 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
             modalTransitionStyle = .crossDissolve
         }
         presentationController?.delegate = self
+        // Required (non-dismissible) surveys can't be swiped/pulled away.
+        isModalInPresentation = !canDismiss
     }
 
     // MARK: Lifecycle
@@ -106,6 +111,7 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
     public override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         if !usesSystemSheet { animateCardIn() }
+        currentQuestionView?.activate()
     }
 
     // MARK: Hierarchy
@@ -125,8 +131,10 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
                 dimView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
                 dimView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
             ])
-            dimView.addGestureRecognizer(
-                UITapGestureRecognizer(target: self, action: #selector(closeTapped)))
+            if canDismiss {
+                dimView.addGestureRecognizer(
+                    UITapGestureRecognizer(target: self, action: #selector(closeTapped)))
+            }
         }
 
         // Card container.
@@ -189,14 +197,19 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
         progressLabel.textColor = theme.secondaryText
         progressLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        // Native system close button (the gray circular "✕") — matches iOS card/sheet styling and
-        // adapts to light/dark automatically. Uses its own intrinsic size (~30pt).
+        // Close button: a filled circular "✕" that clearly reads as a button and stays visible on any
+        // surface (mirrors the iOS system close button). Hidden entirely for required surveys.
+        closeButton.setImage(
+            UIImage(systemName: "xmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .bold)),
+            for: .normal)
+        closeButton.tintColor = theme.secondaryText
+        closeButton.backgroundColor = theme.secondaryText.withAlphaComponent(0.12)
+        closeButton.layer.cornerRadius = 15
+        closeButton.layer.cornerCurve = .continuous
         closeButton.accessibilityLabel = "Close survey"
+        closeButton.isHidden = !canDismiss
         closeButton.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
         closeButton.translatesAutoresizingMaskIntoConstraints = false
-        closeButton.setContentHuggingPriority(.required, for: .horizontal)
-        closeButton.setContentHuggingPriority(.required, for: .vertical)
-        closeButton.setContentCompressionResistancePriority(.required, for: .horizontal)
 
         // Prompt (per-question question text).
         promptLabel.font = theme.promptFont
@@ -232,6 +245,9 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
         card.addSubview(closeButton)
         card.addSubview(scrollView)
         card.addSubview(primaryButton)
+        // Single-question layout lets content start at the top, overlapping the close-button corner —
+        // keep the button above the scroll view so it stays tappable (and fully visible).
+        card.bringSubviewToFront(closeButton)
 
         // The "1 of N" progress only exists for multi-question surveys. For a single question there
         // is no header text, so start the content at the very top (no empty band above the prompt)
@@ -248,6 +264,8 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
             // Header.
             closeButton.topAnchor.constraint(equalTo: card.topAnchor, constant: topInset),
             closeButton.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -pad),
+            closeButton.widthAnchor.constraint(equalToConstant: 30),
+            closeButton.heightAnchor.constraint(equalToConstant: 30),
             progressLabel.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor),
             progressLabel.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: pad),
 
@@ -335,7 +353,10 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
             UIView.animate(withDuration: 0.22, animations: {
                 questionView.alpha = 1
                 outgoing?.alpha = 0
-            }, completion: { _ in outgoing?.removeFromSuperview() })
+            }, completion: { [weak self] _ in
+                outgoing?.removeFromSuperview()
+                self?.currentQuestionView?.activate()
+            })
         } else {
             outgoing?.removeFromSuperview()
         }

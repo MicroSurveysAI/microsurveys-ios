@@ -49,6 +49,10 @@ open class QuestionBaseView: UIView, AnswerProviding {
     /// Override to build the view hierarchy.
     open func setUp() {}
 
+    /// Called when this question becomes the visible one — e.g. to auto-focus a text field.
+    /// Default is a no-op.
+    open func activate() {}
+
     /// Override to expose the current answer.
     open var currentAnswer: SurveyAnswerValue? { nil }
 

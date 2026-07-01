@@ -29,16 +29,14 @@ public final class ThumbsView: QuestionBaseView {
         row.translatesAutoresizingMaskIntoConstraints = false
         addSubview(row)
 
+        // Fill the full available width (two equal halves) instead of a small centered pair.
         NSLayoutConstraint.activate([
             row.topAnchor.constraint(equalTo: topAnchor),
             row.bottomAnchor.constraint(equalTo: bottomAnchor),
-            row.centerXAnchor.constraint(equalTo: centerXAnchor),
-            row.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor),
-            row.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor),
+            row.leadingAnchor.constraint(equalTo: leadingAnchor),
+            row.trailingAnchor.constraint(equalTo: trailingAnchor),
             upButton.heightAnchor.constraint(equalToConstant: 72),
-            upButton.widthAnchor.constraint(equalToConstant: 96),
-            downButton.heightAnchor.constraint(equalToConstant: 72),
-            downButton.widthAnchor.constraint(equalToConstant: 96)
+            downButton.heightAnchor.constraint(equalToConstant: 72)
         ])
         refresh()
     }

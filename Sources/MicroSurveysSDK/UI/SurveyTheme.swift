@@ -69,6 +69,9 @@ public struct SurveyTheme {
     /// Letter spacing (tracking) in points.
     public var promptLetterSpacing: CGFloat
 
+    /// Overall text-size multiplier for body / option / button / caption text (not the title).
+    public var textScale: CGFloat
+
     // MARK: Shadow
 
     /// Subtle elevation under the card. Set `shadowOpacity` to 0 to disable.
@@ -108,6 +111,7 @@ public struct SurveyTheme {
                 promptFontWeight: UIFont.Weight = .semibold,
                 promptLineHeightMultiple: CGFloat = 1.1,
                 promptLetterSpacing: CGFloat = 0,
+                textScale: CGFloat = 1,
                 shadowColor: UIColor = .black,
                 shadowOpacity: Float = 0.18,
                 shadowRadius: CGFloat = 24,
@@ -136,6 +140,7 @@ public struct SurveyTheme {
         self.promptFontWeight = promptFontWeight
         self.promptLineHeightMultiple = promptLineHeightMultiple
         self.promptLetterSpacing = promptLetterSpacing
+        self.textScale = textScale
         self.shadowColor = shadowColor
         self.shadowOpacity = shadowOpacity
         self.shadowRadius = shadowRadius
@@ -150,26 +155,39 @@ public struct SurveyTheme {
     /// in memory) or may be one the host app bundled itself. If it isn't registered yet, the system
     /// font is kept and the SDK re-applies the theme once the fetch completes. For an exact custom
     /// face, set the individual `*Font` fields directly instead.
-    public mutating func applyFontFamily(_ family: String) {
-        // No registered faces for this family yet (still fetching, or unknown) → keep system fonts.
-        guard !UIFont.fontNames(forFamilyName: family).isEmpty else {
-            MSLog.debug("theme font '\(family)' not yet registered — using system font for now")
-            return
+    public mutating func rebuildFonts(family: String?) {
+        // Only use the family if it has registered faces (host-bundled or fetched by
+        // GoogleFontLoader); otherwise fall back to the system font per role.
+        let resolvedFamily: String? = {
+            guard let f = family, f != "system", !f.isEmpty,
+                  !UIFont.fontNames(forFamilyName: f).isEmpty else { return nil }
+            return f
+        }()
+
+        func make(_ size: CGFloat, _ style: UIFont.TextStyle, _ weight: UIFont.Weight) -> UIFont {
+            if let family = resolvedFamily {
+                let descriptor = UIFontDescriptor(fontAttributes: [
+                    .family: family,
+                    .traits: [UIFontDescriptor.TraitKey.weight: weight],
+                ])
+                return UIFontMetrics(forTextStyle: style).scaledFont(for: UIFont(descriptor: descriptor, size: size))
+            }
+            return SurveyTheme.scaledFont(size, weight, style)
         }
 
-        func f(_ size: CGFloat, _ style: UIFont.TextStyle, _ weight: UIFont.Weight) -> UIFont {
-            let descriptor = UIFontDescriptor(fontAttributes: [
-                .family: family,
-                .traits: [UIFontDescriptor.TraitKey.weight: weight],
-            ])
-            let base = UIFont(descriptor: descriptor, size: size)
-            return UIFontMetrics(forTextStyle: style).scaledFont(for: base)
-        }
-        promptFont = f(promptFontSize, .title3, promptFontWeight)
-        bodyFont = f(16, .body, .regular)
-        captionFont = f(13, .footnote, .regular)
-        buttonFont = f(16, .headline, .semibold)
-        chipFont = f(16, .body, .medium)
+        // The title carries its own size/weight; everything else scales with `textScale`.
+        let s = Swift.max(0.5, textScale)
+        promptFont  = make(promptFontSize, .title3, promptFontWeight)
+        bodyFont    = make(16 * s, .body, .regular)
+        captionFont = make(13 * s, .footnote, .regular)
+        buttonFont  = make(16 * s, .headline, .semibold)
+        chipFont    = make(16 * s, .body, .medium)
+    }
+
+    /// Rebuild fonts using `family` (host-bundled or Google-fetched). Kept for hosts that set a
+    /// family directly on the theme; if it isn't registered yet the system font is used for now.
+    public mutating func applyFontFamily(_ family: String) {
+        rebuildFonts(family: family)
     }
 
     // MARK: Default theme

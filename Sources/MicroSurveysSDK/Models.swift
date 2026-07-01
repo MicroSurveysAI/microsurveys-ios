@@ -200,6 +200,9 @@ public struct Survey: Codable, Equatable {
     public let startsAt: String?
     public let endsAt: String?
     public let triggers: [Trigger]?
+    /// Whether the respondent may dismiss without answering. `nil` ⇒ treat as dismissible.
+    /// When false, the SDK hides the close button and blocks swipe/scrim dismissal.
+    public let dismissible: Bool?
 
     public init(id: String,
                 name: String,
@@ -209,7 +212,8 @@ public struct Survey: Codable, Equatable {
                 maxPerUserDays: Int? = nil,
                 startsAt: String? = nil,
                 endsAt: String? = nil,
-                triggers: [Trigger]? = nil) {
+                triggers: [Trigger]? = nil,
+                dismissible: Bool? = nil) {
         self.id = id
         self.name = name
         self.questions = questions
@@ -219,6 +223,7 @@ public struct Survey: Codable, Equatable {
         self.startsAt = startsAt
         self.endsAt = endsAt
         self.triggers = triggers
+        self.dismissible = dismissible
     }
 
     /// Questions sorted by their declared `order`, which is the order the
