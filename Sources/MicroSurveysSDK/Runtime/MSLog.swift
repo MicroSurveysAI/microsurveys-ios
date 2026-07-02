@@ -13,10 +13,14 @@ import Foundation
 enum MSLog {
     enum Level: Int { case off = 0, info = 1, debug = 2 }
 
-    /// On by default so integration logs show without extra setup (this SDK is pre-launch).
-    /// `#if DEBUG` is unreliable for SwiftPM targets, so we don't gate on it — turn off in
-    /// production via `MicroSurveysSDK.loggingEnabled = false`.
+    /// Verbose by default in DEBUG builds only; OFF in release so end-user event
+    /// properties (potential PII) are never written to the device console in shipped
+    /// apps. Integrators can still opt in via `MicroSurveysSDK.loggingEnabled = true`.
+    #if DEBUG
     static var level: Level = .debug
+    #else
+    static var level: Level = .off
+    #endif
 
     /// High-signal lines: lifecycle, trigger decisions, presentation, network.
     static func info(_ message: @autoclosure () -> String) { emit(.info, message()) }
