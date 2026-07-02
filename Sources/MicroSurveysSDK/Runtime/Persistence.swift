@@ -68,6 +68,13 @@ final class ConfigStore {
         return persisted?.etag
     }
 
+    /// When the cached config was last written, for TTL-based freshness checks.
+    /// `nil` when nothing has been cached yet.
+    var storedAt: Date? {
+        lock.lock(); defer { lock.unlock() }
+        return persisted?.storedAt
+    }
+
     /// Persists the raw config response and refreshes the in-memory decode.
     func save(rawConfig: Data, etag: String?) {
         let entry = Persisted(rawConfig: rawConfig, etag: etag, storedAt: Date())

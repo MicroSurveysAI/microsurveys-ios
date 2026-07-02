@@ -46,7 +46,14 @@ public final class MicroSurveysSDK {
 
     #if canImport(UIKit)
     private let presenter = Presenter()
+    private var foregroundObserver: NSObjectProtocol?
     #endif
+
+    /// How long a cached config is treated as fresh. On app-foreground the SDK
+    /// re-fetches only when the cache is older than this, so a long-lived app
+    /// (suspended for days, never cold-launched) can't keep serving stale
+    /// surveys/appearance. An unchanged fetch is a cheap ETag `304`.
+    private static let configTTL: TimeInterval = 12 * 60 * 60
 
     public init(
         apiKey: String,
@@ -68,6 +75,7 @@ public final class MicroSurveysSDK {
 
         configureEngine()
         applyCachedTheme()
+        startLifecycleObserver()
     }
 
     private func configureEngine() {
@@ -91,7 +99,8 @@ public final class MicroSurveysSDK {
     }
 
     /// Re-fetches `/api/sdk/config` (ETag-aware) and updates the cache + theme.
-    /// Call on app-foreground or a timer if you want fresher config than launch.
+    /// Foreground refresh is automatic (see `refreshConfigIfStale`); call this
+    /// directly only to force an unconditional refresh.
     public func refreshConfig() {
         Task { [weak self] in
             guard let self else { return }
@@ -109,6 +118,18 @@ public final class MicroSurveysSDK {
                 MSLog.info("config fetch failed (\(error)); keeping cached config")
             }
         }
+    }
+
+    /// Re-fetches config only when the cache is missing or older than
+    /// `configTTL` (12h). Fired automatically on app-foreground so long-lived
+    /// apps refresh without the host wiring up a timer; safe to call manually.
+    public func refreshConfigIfStale() {
+        if let storedAt = configStore.storedAt,
+           Date().timeIntervalSince(storedAt) < Self.configTTL {
+            return
+        }
+        MSLog.info("config cache stale (TTL \(Int(Self.configTTL))s); refreshing")
+        refreshConfig()
     }
 
     // MARK: Identity
@@ -155,6 +176,23 @@ public final class MicroSurveysSDK {
         set { presenter.presentationAnchor = newValue }
     }
 
+    /// Refreshes config on every app-foreground, throttled by `configTTL`.
+    private func startLifecycleObserver() {
+        foregroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.refreshConfigIfStale()
+        }
+    }
+
+    deinit {
+        if let foregroundObserver {
+            NotificationCenter.default.removeObserver(foregroundObserver)
+        }
+    }
+
     private func applyCachedTheme() {
         let project = configStore.theme
         DispatchQueue.main.async { [weak self] in
@@ -197,7 +235,8 @@ public final class MicroSurveysSDK {
         }
     }
     #else
-    /// No UIKit (e.g. `swift build` on macOS): theme/presentation are no-ops.
+    /// No UIKit (e.g. `swift build` on macOS): theme/presentation/lifecycle are no-ops.
+    private func startLifecycleObserver() {}
     private func applyCachedTheme() {}
     private func present(survey: Survey, trigger: Trigger, identity: MSIdentity) {}
     #endif
