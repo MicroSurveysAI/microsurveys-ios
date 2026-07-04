@@ -20,7 +20,7 @@ Local package (monorepo):
 Or by URL once published:
 
 ```swift
-.package(url: "https://github.com/<org>/MicroSurveysSDK", from: "0.1.0")
+.package(url: "https://github.com/MicroSurveysAI/microsurveys-ios", from: "0.1.0")
 ```
 
 Then add `MicroSurveysSDK` to your target's dependencies. The package links
