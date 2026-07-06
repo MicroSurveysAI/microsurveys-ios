@@ -61,6 +61,11 @@ final class TriggerEngine {
         for survey in surveysProvider() {
             guard let triggers = survey.triggers, !triggers.isEmpty else { continue }
 
+            // Platform targeting: skip when the list is non-empty and excludes iOS.
+            if let platforms = survey.platforms, !platforms.isEmpty, !platforms.contains("ios") {
+                MSLog.info("  ✗ skip '\(survey.name)': platform-targeted \(platforms), not iOS"); continue
+            }
+
             for trigger in triggers {
                 let satisfied = advance(trigger: trigger,
                                         state: &state,

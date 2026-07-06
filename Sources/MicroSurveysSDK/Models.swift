@@ -207,6 +207,9 @@ public struct Survey: Codable, Equatable {
     public let presentation: String?
     /// Custom completion message shown briefly before auto-dismiss. `nil` ⇒ SDK default.
     public let successMessage: String?
+    /// Platform targeting for auto-presentation. Empty/`nil` ⇒ all platforms. When non-empty and it
+    /// excludes this SDK's platform ("ios"), the engine skips the survey. See API-CONTRACT §Eligibility.
+    public let platforms: [String]?
 
     public init(id: String,
                 name: String,
@@ -219,7 +222,8 @@ public struct Survey: Codable, Equatable {
                 triggers: [Trigger]? = nil,
                 dismissible: Bool? = nil,
                 presentation: String? = nil,
-                successMessage: String? = nil) {
+                successMessage: String? = nil,
+                platforms: [String]? = nil) {
         self.id = id
         self.name = name
         self.questions = questions
@@ -232,6 +236,7 @@ public struct Survey: Codable, Equatable {
         self.dismissible = dismissible
         self.presentation = presentation
         self.successMessage = successMessage
+        self.platforms = platforms
     }
 
     /// Questions sorted by their declared `order`, which is the order the
