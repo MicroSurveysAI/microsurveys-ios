@@ -208,8 +208,8 @@ public struct SurveyTheme {
                                 dark:  rgb(0xFA, 0xFA, 0xFA)),
             secondaryText: dynamic(light: rgb(0x71, 0x71, 0x7A),
                                    dark:  rgb(0xA1, 0xA1, 0xAA)),
-            accent:     dynamic(light: rgb(0x63, 0x66, 0xF1),   // indigo-500
-                                dark:  rgb(0x81, 0x8C, 0xF8)),  // indigo-400
+            accent:     dynamic(light: rgb(0x2E, 0x72, 0x72),   // Slate Teal
+                                dark:  rgb(0x41, 0xB2, 0xB2)),  // Slate Teal (dark)
             accentText: rgb(0xFF, 0xFF, 0xFF),
             border:     dynamic(light: rgb(0xE4, 0xE4, 0xE7),
                                 dark:  rgb(0x33, 0x33, 0x38)),
