@@ -9,7 +9,7 @@ final class MicroSurveysSDKTests: XCTestCase {
 
     func testDefaultBaseURL() {
         let sdk = MicroSurveysSDK(apiKey: "ms_test_abc123")
-        XCTAssertEqual(sdk.apiBaseURL.absoluteString, "https://microsurveys.edubai.ventures")
+        XCTAssertEqual(sdk.apiBaseURL.absoluteString, "https://console.microsurveys.ai")
     }
 
     // MARK: - Model decoding (cross-platform; no UIKit)
