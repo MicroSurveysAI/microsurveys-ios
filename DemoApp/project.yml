@@ -1,0 +1,36 @@
+# Demo host app for eyeballing the iOS SDK's survey UI on a simulator or device.
+# Generate the Xcode project with `xcodegen` (run from this directory); the
+# .xcodeproj is git-ignored.
+name: MicroSurveysDemo
+options:
+  bundleIdPrefix: com.microsurveys
+  deploymentTarget:
+    iOS: "16.0"
+packages:
+  MicroSurveysSDK:
+    path: ..
+targets:
+  MicroSurveysDemo:
+    type: application
+    platform: iOS
+    sources: [Sources]
+    dependencies:
+      - package: MicroSurveysSDK
+    info:
+      path: Sources/Info.plist
+      properties:
+        CFBundleDisplayName: MS Demo
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+          UISceneConfigurations:
+            UIWindowSceneSessionRoleApplication:
+              - UISceneConfigurationName: Default
+                UISceneDelegateClassName: $(PRODUCT_MODULE_NAME).SceneDelegate
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.microsurveys.demo
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_STYLE: Automatic
