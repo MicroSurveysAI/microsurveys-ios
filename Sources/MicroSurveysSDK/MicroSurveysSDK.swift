@@ -215,12 +215,14 @@ public final class MicroSurveysSDK {
 
         presenter.present(survey: survey) { [weak self] result in
             guard let self, let result else { return }
+            let context = DeviceContext.current()
             // Impression is finalized at close, so `dismissed` is authoritative.
-            self.apiClient.recordImpression(surveyId: survey.id,
-                                            triggerId: trigger.id,
-                                            endUserId: endUserId,
-                                            shownAt: shownAt,
-                                            dismissed: result.dismissed)
+            let impressionId = self.apiClient.recordImpression(surveyId: survey.id,
+                                                               triggerId: trigger.id,
+                                                               endUserId: endUserId,
+                                                               shownAt: shownAt,
+                                                               dismissed: result.dismissed,
+                                                               context: context)
             // A pure dismissal (closed with no answers) is an impression, NOT a response —
             // don't submit one, or it inflates the response count. Partial multi-step answers
             // (answered ≥1, then dropped) still count.
@@ -230,6 +232,9 @@ public final class MicroSurveysSDK {
                                               completed: result.completed,
                                               submittedAt: Date(),
                                               userProps: userProps,
+                                              impressionId: impressionId,
+                                              triggerId: trigger.id,
+                                              context: context,
                                               answers: result.answers)
             }
         }

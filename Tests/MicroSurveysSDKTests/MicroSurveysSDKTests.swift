@@ -214,6 +214,32 @@ final class MicroSurveysSDKTests: XCTestCase {
         try JSONDecoder().decode(TriggerStep.self, from: json.data(using: .utf8)!)
     }
 
+    // MARK: - Ingest payloads (API-CONTRACT §3, "Device context")
+
+    func testResponsePayloadCarriesImpressionTriggerAndContext() throws {
+        let context = DeviceContext(platform: "ios", appVersion: "3.2.0", osVersion: "26.1", locale: "pt-BR")
+        let payload = ResponsePayload(clientId: "r1", surveyId: "s1", endUserId: "u1", completed: true,
+                                      submittedAt: "2026-10-20T12:00:00Z", userProps: [:],
+                                      impressionId: "i1", triggerId: "t1", context: context, answers: [])
+        let json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(payload)) as! [String: Any]
+        XCTAssertEqual(json["impressionId"] as? String, "i1")
+        XCTAssertEqual(json["triggerId"] as? String, "t1")
+        XCTAssertEqual(json["context"] as? [String: String],
+                       ["platform": "ios", "appVersion": "3.2.0", "osVersion": "26.1", "locale": "pt-BR"])
+    }
+
+    func testUnknownContextFieldsAreLeftOut() throws {
+        let context = DeviceContext(platform: "ios", appVersion: nil, osVersion: "26.1", locale: nil)
+        let json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(context)) as! [String: Any]
+        XCTAssertEqual(Set(json.keys), ["platform", "osVersion"])
+    }
+
+    func testCurrentContextIsIOS() {
+        let context = DeviceContext.current()
+        XCTAssertEqual(context.platform, "ios")
+        XCTAssertNotNil(context.osVersion)
+    }
+
     private func decodeTrigger(_ json: String) throws -> Trigger {
         try JSONDecoder().decode(Trigger.self, from: json.data(using: .utf8)!)
     }

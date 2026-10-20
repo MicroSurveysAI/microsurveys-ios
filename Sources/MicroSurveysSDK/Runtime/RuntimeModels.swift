@@ -109,6 +109,28 @@ public struct MSEvent {
 
 // MARK: - Ingest payloads (Encodable; match API-CONTRACT §2 / §3)
 
+/// Where a survey was shown, sent with impressions and responses so results can be
+/// broken down by platform, release and language (API-CONTRACT "Device context").
+/// Fields that aren't known are left out of the JSON.
+struct DeviceContext: Encodable, Equatable {
+    let platform: String
+    let appVersion: String?
+    let osVersion: String?
+    let locale: String?
+
+    /// This device, read at record time: the user can change language while the app runs.
+    static func current(bundle: Bundle = .main) -> DeviceContext {
+        let os = ProcessInfo.processInfo.operatingSystemVersion
+        let osVersion = os.patchVersion > 0
+            ? "\(os.majorVersion).\(os.minorVersion).\(os.patchVersion)"
+            : "\(os.majorVersion).\(os.minorVersion)"
+        return DeviceContext(platform: "ios",
+                             appVersion: bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+                             osVersion: osVersion,
+                             locale: Locale.preferredLanguages.first)
+    }
+}
+
 struct ImpressionPayload: Encodable {
     let clientId: String
     let surveyId: String
@@ -116,6 +138,7 @@ struct ImpressionPayload: Encodable {
     let endUserId: String
     let shownAt: String      // ISO-8601 UTC
     let dismissed: Bool
+    let context: DeviceContext
 }
 
 struct ImpressionBatch: Encodable {
@@ -129,6 +152,10 @@ struct ResponsePayload: Encodable {
     let completed: Bool
     let submittedAt: String  // ISO-8601 UTC
     let userProps: [String: JSONValue]
+    /// The `clientId` of the impression for the same showing.
+    let impressionId: String
+    let triggerId: String?
+    let context: DeviceContext
     let answers: [SurveyAnswer]
 }
 

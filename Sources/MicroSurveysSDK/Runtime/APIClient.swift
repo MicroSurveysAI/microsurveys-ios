@@ -131,20 +131,26 @@ final class APIClient {
 
     // MARK: Impressions / responses
 
-    /// Queues an impression and kicks a flush. Best-effort; never throws.
+    /// Queues an impression and kicks a flush. Best-effort; never throws. Returns the
+    /// impression's `clientId`, so the response from the same showing can point back to it.
+    @discardableResult
     func recordImpression(surveyId: String,
                           triggerId: String?,
                           endUserId: String,
                           shownAt: Date,
-                          dismissed: Bool) {
-        let payload = ImpressionPayload(clientId: UUID().uuidString,
+                          dismissed: Bool,
+                          context: DeviceContext) -> String {
+        let clientId = UUID().uuidString
+        let payload = ImpressionPayload(clientId: clientId,
                                         surveyId: surveyId,
                                         triggerId: triggerId,
                                         endUserId: endUserId,
                                         shownAt: MSTime.string(from: shownAt),
-                                        dismissed: dismissed)
+                                        dismissed: dismissed,
+                                        context: context)
         MSLog.info("impression queued (survey=\(surveyId), dismissed=\(dismissed))")
         enqueue(path: "/api/sdk/impressions", value: ImpressionBatch(impressions: [payload]))
+        return clientId
     }
 
     /// Queues a response and kicks a flush. Best-effort; never throws.
@@ -153,6 +159,9 @@ final class APIClient {
                         completed: Bool,
                         submittedAt: Date,
                         userProps: [String: JSONValue],
+                        impressionId: String,
+                        triggerId: String?,
+                        context: DeviceContext,
                         answers: [SurveyAnswer]) {
         let payload = ResponsePayload(clientId: UUID().uuidString,
                                       surveyId: surveyId,
@@ -160,6 +169,9 @@ final class APIClient {
                                       completed: completed,
                                       submittedAt: MSTime.string(from: submittedAt),
                                       userProps: userProps,
+                                      impressionId: impressionId,
+                                      triggerId: triggerId,
+                                      context: context,
                                       answers: answers)
         MSLog.info("response queued (survey=\(surveyId), completed=\(completed), answers=\(answers.count))")
         enqueue(path: "/api/sdk/responses", value: ResponseBatch(responses: [payload]))
