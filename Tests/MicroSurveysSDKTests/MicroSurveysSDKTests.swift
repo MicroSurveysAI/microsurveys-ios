@@ -35,6 +35,34 @@ final class MicroSurveysSDKTests: XCTestCase {
         XCTAssertEqual(maxLabel, "Very easy")
     }
 
+    func testAbsurdConfigValuesAreBounded() throws {
+        func decode(_ type: String, _ config: String) throws -> QuestionConfig {
+            let json = """
+            { "id": "q", "order": 0, "type": "\(type)", "prompt": "?", "config": \(config) }
+            """.data(using: .utf8)!
+            return try JSONDecoder().decode(Question.self, from: json).config
+        }
+        // Real configs are left as authored.
+        guard case let .scale(min, max, _, _) = try decode("NPS", #"{ "min": 0, "max": 10 }"#) else {
+            return XCTFail("expected scale")
+        }
+        XCTAssertEqual([min, max], [0, 10])
+        // Absurd ones are bounded, so the survey can't freeze the app.
+        guard case let .scale(lo, hi, _, _) = try decode("NPS", #"{ "min": 0, "max": 1000000000 }"#) else {
+            return XCTFail("expected scale")
+        }
+        XCTAssertEqual([lo, hi], [0, 100])
+        guard case let .stars(count) = try decode("CSAT_STAR", #"{ "count": 1000000000 }"#) else {
+            return XCTFail("expected stars")
+        }
+        XCTAssertEqual(count, 100)
+        let options = (0..<5000).map { #"{ "value": "\#($0)" }"# }.joined(separator: ",")
+        guard case let .singleChoice(opts) = try decode("SINGLE_CHOICE", "{ \"options\": [\(options)] }") else {
+            return XCTFail("expected choice")
+        }
+        XCTAssertEqual(opts.count, 100)
+    }
+
     func testAnswerValueEncodingShapes() throws {
         let enc = JSONEncoder()
         func encoded(_ v: SurveyAnswerValue) throws -> String {

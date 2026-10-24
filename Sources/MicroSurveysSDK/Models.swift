@@ -153,25 +153,45 @@ public struct Question: Codable, Equatable {
         try c.encode(isRequired, forKey: .isRequired)
     }
 
+    // Upper bounds on what a config can make the SDK draw. Scales, stars and
+    // options are drawn one control per item, so an absurd value would freeze
+    // the app. Real surveys sit far below these; the server applies the same
+    // bounds before sending the config.
+    private static let maxScalePoints = 101
+    private static let maxScaleAbs = 1000
+    private static let maxStars = 100
+    private static let maxOptions = 100
+
+    /// Clamps both ends to ±maxScaleAbs and the range to maxScalePoints,
+    /// keeping the low end. Order is preserved (the view handles reversed).
+    private static func boundedScale(min rawMin: Int, max rawMax: Int,
+                                     minLabel: String?, maxLabel: String?) -> QuestionConfig {
+        var lo = Swift.min(Swift.max(rawMin, -maxScaleAbs), maxScaleAbs)
+        var hi = Swift.min(Swift.max(rawMax, -maxScaleAbs), maxScaleAbs)
+        if hi - lo > maxScalePoints - 1 { hi = lo + maxScalePoints - 1 }
+        if lo - hi > maxScalePoints - 1 { lo = hi + maxScalePoints - 1 }
+        return .scale(min: lo, max: hi, minLabel: minLabel, maxLabel: maxLabel)
+    }
+
     private static func buildConfig(type: QuestionType, raw: RawConfig?) -> QuestionConfig {
         switch type {
         case .nps:
-            return .scale(min: raw?.min ?? 0, max: raw?.max ?? 10,
-                          minLabel: raw?.minLabel, maxLabel: raw?.maxLabel)
+            return boundedScale(min: raw?.min ?? 0, max: raw?.max ?? 10,
+                                minLabel: raw?.minLabel, maxLabel: raw?.maxLabel)
         case .ces:
-            return .scale(min: raw?.min ?? 1, max: raw?.max ?? 7,
-                          minLabel: raw?.minLabel, maxLabel: raw?.maxLabel)
+            return boundedScale(min: raw?.min ?? 1, max: raw?.max ?? 7,
+                                minLabel: raw?.minLabel, maxLabel: raw?.maxLabel)
         case .csatStar:
-            return .stars(count: raw?.count ?? 5)
+            return .stars(count: Swift.min(raw?.count ?? 5, maxStars))
         case .csatEmoji:
-            let options = (raw?.options ?? []).map {
+            let options = (raw?.options ?? []).prefix(maxOptions).map {
                 EmojiOption(value: $0.value, emoji: $0.emoji ?? "", label: $0.label)
             }
             return .emoji(options: options)
         case .thumbs:
             return .thumbs
         case .singleChoice:
-            let options = (raw?.options ?? []).map {
+            let options = (raw?.options ?? []).prefix(maxOptions).map {
                 ChoiceOption(value: $0.value, label: $0.label ?? $0.value)
             }
             return .singleChoice(options: options)
