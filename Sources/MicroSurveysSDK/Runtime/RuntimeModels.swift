@@ -131,6 +131,19 @@ struct DeviceContext: Encodable, Equatable {
     }
 }
 
+/// One upload window of event counts (`POST /api/sdk/events`).
+struct EventCountsBatch: Encodable {
+    struct Context: Encodable {
+        let platform: String
+        let appVersion: String?
+        let osVersion: String?
+        let locale: String?
+        let sdkVersion: String
+    }
+    let events: [EventCount]
+    let context: Context
+}
+
 struct ImpressionPayload: Encodable {
     let clientId: String
     let surveyId: String

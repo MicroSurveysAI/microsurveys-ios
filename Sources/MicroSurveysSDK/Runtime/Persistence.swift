@@ -56,6 +56,19 @@ final class ConfigStore {
         return decodedConfig
     }
 
+    /// Whether the project has event signals on (false when unknown).
+    var eventSignals: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return decodedConfig?.eventSignals ?? false
+    }
+
+    /// The cached project id and test-device hashes, for the live debugger.
+    var debugTarget: (projectId: String, users: [String])? {
+        lock.lock(); defer { lock.unlock() }
+        guard let config = decodedConfig, let users = config.debugUsers, !users.isEmpty else { return nil }
+        return (config.projectId, users)
+    }
+
     /// The cached project theme.
     var theme: ProjectTheme? {
         lock.lock(); defer { lock.unlock() }

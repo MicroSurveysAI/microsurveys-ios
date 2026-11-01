@@ -18,6 +18,34 @@
 
 import Foundation
 
+/// Why the engine did or didn't schedule a survey for an event. Reported to the
+/// live debugger for test devices; never affects what the engine does. Raw
+/// values match the web and React Native SDKs.
+enum DecisionReason: String, Encodable {
+    case platform
+    case propertyMismatch = "property_mismatch"
+    case sequenceInProgress = "sequence_in_progress"
+    case notStarted = "not_started"
+    case ended
+    case frequency
+    case audience
+    case sampledOut = "sampled_out"
+    case cap
+    case eligible
+    case shown
+    case anotherSurveyShowing = "another_survey_showing"
+    /// iOS only: no view controller to present from.
+    case notPresentable = "not_presentable"
+}
+
+struct Decision: Encodable, Equatable {
+    let surveyId: String
+    let triggerId: String?
+    let reason: DecisionReason
+    /// For `eligible`: seconds until the survey shows.
+    var delaySeconds: Int? = nil
+}
+
 final class TriggerEngine {
 
     /// Supplies the active surveys to evaluate (the cached config's surveys).
@@ -27,6 +55,12 @@ final class TriggerEngine {
     var identityProvider: () -> MSIdentity
     /// Invoked on the **main** queue when a survey should be presented now.
     var onPresent: ((Survey, Trigger, MSIdentity) -> Void)?
+    /// Invoked on the engine queue after each event with every decision about a
+    /// survey whose trigger names it (empty when none does). For the live debugger.
+    var onEvaluated: ((String, [String: Any], [Decision]) -> Void)?
+    /// Invoked on the engine queue for a decision made after the event, when a
+    /// delayed survey's cap is re-checked.
+    var onLateDecision: ((Decision) -> Void)?
 
     private let store: TriggerStateStore
     private let queue = DispatchQueue(label: "com.microsurveys.engine")
@@ -57,12 +91,18 @@ final class TriggerEngine {
         let endUserId = identity.endUserId
         var state = store.load(endUserId: endUserId)
         let nowDate = now()
+        var decisions: [Decision] = []
 
         for survey in surveysProvider() {
             guard let triggers = survey.triggers, !triggers.isEmpty else { continue }
+            // Only surveys whose trigger names this event are reported to the debugger.
+            let names: (Trigger) -> Bool = { $0.steps.contains { $0.event == name } }
 
             // Platform targeting: skip when the list is non-empty and excludes iOS.
             if let platforms = survey.platforms, !platforms.isEmpty, !platforms.contains("ios") {
+                if let t = triggers.first(where: names) {
+                    decisions.append(Decision(surveyId: survey.id, triggerId: t.id, reason: .platform))
+                }
                 MSLog.info("  ✗ skip '\(survey.name)': platform-targeted \(platforms), not iOS"); continue
             }
 
@@ -72,41 +112,62 @@ final class TriggerEngine {
                                         eventName: name,
                                         properties: properties,
                                         nowDate: nowDate)
-                guard satisfied else { continue }
+                let skip: (DecisionReason) -> Void = {
+                    decisions.append(Decision(surveyId: survey.id, triggerId: trigger.id, reason: $0))
+                }
+                guard satisfied else {
+                    if names(trigger) {
+                        // Matched a step without completing the trigger (a sequence), or had the
+                        // right name with the wrong properties.
+                        let matchedStep = trigger.steps.contains {
+                            MatchEvaluator.eventMatchesStep(eventName: name, properties: properties, step: $0)
+                        }
+                        skip(matchedStep ? .sequenceInProgress : .propertyMismatch)
+                    }
+                    continue
+                }
 
                 let occurrence = state.triggers[trigger.id]?.satisfiedCount ?? 0
                 MSLog.info("trigger matched for '\(survey.name)' (occurrence \(occurrence)) on event '\(name)'")
 
                 // (1) window
-                guard isWithinWindow(survey: survey, nowDate: nowDate) else {
+                if let outside = windowReason(survey: survey, nowDate: nowDate) {
+                    skip(outside)
                     MSLog.info("  ✗ skip '\(survey.name)': outside start/end window"); continue
                 }
                 // (3) frequency
                 guard passesFrequency(trigger: trigger, occurrence: occurrence) else {
+                    skip(.frequency)
                     MSLog.info("  ✗ skip '\(survey.name)': frequency (fireEvery=\(trigger.fireEvery), warmup=\(trigger.warmupCount), occ=\(occurrence))")
                     continue
                 }
                 // (4) audience
                 if let audience = survey.audienceMatch,
                    !MatchEvaluator.audienceMatches(audience, userProperties: identity.userProperties) {
+                    skip(.audience)
                     MSLog.info("  ✗ skip '\(survey.name)': audience mismatch — need \(audience), have user-property keys \(identity.userProperties.keys.sorted())")
                     continue
                 }
                 // (5) sampling (sticky)
                 guard passesSampling(survey: survey, endUserId: endUserId, state: &state) else {
+                    skip(.sampledOut)
                     MSLog.info("  ✗ skip '\(survey.name)': not in sample (\(survey.samplePercent ?? 100)%)"); continue
                 }
                 // (6) cap
                 guard passesCap(survey: survey, state: state, nowDate: nowDate) else {
+                    skip(.cap)
                     MSLog.info("  ✗ skip '\(survey.name)': frequency cap (maxPerUserDays=\(survey.maxPerUserDays ?? 0))"); continue
                 }
 
+                decisions.append(Decision(surveyId: survey.id, triggerId: trigger.id, reason: .eligible,
+                                          delaySeconds: max(0, trigger.delaySeconds)))
                 MSLog.info("  ✓ '\(survey.name)' eligible — showing in \(max(0, trigger.delaySeconds))s")
                 scheduleShow(survey: survey, trigger: trigger, identity: identity)
             }
         }
 
         store.save(endUserId: endUserId, state: state)
+        onEvaluated?(name, properties, decisions)
     }
 
     // MARK: Trigger advancement
@@ -130,14 +191,15 @@ final class TriggerEngine {
 
     // MARK: Eligibility checks
 
-    private func isWithinWindow(survey: Survey, nowDate: Date) -> Bool {
+    /// `nil` inside the start/end window, otherwise which side of it we're on.
+    private func windowReason(survey: Survey, nowDate: Date) -> DecisionReason? {
         if let startsAt = survey.startsAt, let start = MSTime.date(from: startsAt), nowDate < start {
-            return false
+            return .notStarted
         }
         if let endsAt = survey.endsAt, let end = MSTime.date(from: endsAt), nowDate > end {
-            return false
+            return .ended
         }
-        return true
+        return nil
     }
 
     /// `occurrence` is 1-based. Ignore the first `warmupCount`, then fire on
@@ -179,6 +241,7 @@ final class TriggerEngine {
             // Re-check the cap at fire time (another survey may have shown during
             // the delay).
             guard self.passesCap(survey: survey, state: state, nowDate: nowDate) else {
+                self.onLateDecision?(Decision(surveyId: survey.id, triggerId: trigger.id, reason: .cap))
                 MSLog.info("  ✗ '\(survey.name)' suppressed at fire time: cap")
                 return
             }

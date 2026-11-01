@@ -43,11 +43,17 @@ public final class MicroSurveysSDK {
     private let identityStore: IdentityStore
     private let triggerStateStore: TriggerStateStore
     private let engine: TriggerEngine
+    private let eventCounter = EventCounter()
+    private var eventCountsTimer: Timer?
 
     #if canImport(UIKit)
     private let presenter = Presenter()
     private var foregroundObserver: NSObjectProtocol?
+    private var backgroundObserver: NSObjectProtocol?
     #endif
+
+    /// How often counted events are uploaded while event signals are on.
+    private static let eventCountsInterval: TimeInterval = 60
 
     /// How long a cached config is treated as fresh. On app-foreground the SDK
     /// re-fetches only when the cache is older than this, so a long-lived app
@@ -85,6 +91,26 @@ public final class MicroSurveysSDK {
         engine.onPresent = { [weak self] survey, trigger, identity in
             self?.present(survey: survey, trigger: trigger, identity: identity)
         }
+        engine.onEvaluated = { [weak self] name, properties, decisions in
+            self?.sendDebug(event: name, properties: DebugEntry.displayProperties(properties), decisions: decisions)
+        }
+        engine.onLateDecision = { [weak self] decision in
+            self?.sendDebug(event: nil, properties: [:], decisions: [decision])
+        }
+    }
+
+    // MARK: Live debugger
+
+    /// Sends a debugger entry when the dashboard picked the current user as a test device.
+    private func sendDebug(event: String?, properties: [String: JSONValue], decisions: [Decision]) {
+        guard let target = configStore.debugTarget else { return }
+        let endUserId = identityStore.snapshot().endUserId
+        guard target.users.contains(DebugKey.make(projectId: target.projectId, endUserId: endUserId)) else { return }
+        apiClient.recordDebug(DebugEntry(at: MSTime.string(from: Date()), event: event,
+                                         properties: properties, decisions: decisions),
+                              endUserId: endUserId,
+                              context: DeviceContext.current(),
+                              sdkVersion: Self.sdkVersion)
     }
 
     // MARK: Lifecycle
@@ -96,6 +122,35 @@ public final class MicroSurveysSDK {
         MSLog.info("start: key=\(apiKey.prefix(11))…, base=\(apiBaseURL.absoluteString)")
         apiClient.flush()
         refreshConfig()
+        startEventCountsTimer()
+    }
+
+    // MARK: Event signals
+
+    /// Counts an event when the project has event signals on. Both entry points
+    /// (`track` and the Amplitude plugin) go through here.
+    private func count(name: String, properties: [String: Any]) {
+        guard configStore.eventSignals else { return }
+        eventCounter.record(name: name, properties: properties)
+        if eventCounter.size >= EventCounter.maxNames { flushEventCounts() }
+    }
+
+    /// Uploads the events counted since the last upload (no-op when there are none).
+    func flushEventCounts() {
+        guard eventCounter.size > 0 else { return }
+        apiClient.recordEventCounts(eventCounter.drain(),
+                                    context: DeviceContext.current(),
+                                    sdkVersion: Self.sdkVersion)
+    }
+
+    private func startEventCountsTimer() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.eventCountsTimer == nil else { return }
+            self.eventCountsTimer = Timer.scheduledTimer(withTimeInterval: Self.eventCountsInterval,
+                                                         repeats: true) { [weak self] _ in
+                self?.flushEventCounts()
+            }
+        }
     }
 
     /// Re-fetches `/api/sdk/config` (ETag-aware) and updates the cache + theme.
@@ -147,6 +202,7 @@ public final class MicroSurveysSDK {
     /// events that don't flow through Amplitude's SDK. Pushed straight into the
     /// trigger engine with the current identity snapshot.
     public func track(_ name: String, properties: [String: Any] = [:]) {
+        count(name: name, properties: properties)
         engine.process(name: name, properties: properties)
     }
 
@@ -185,11 +241,23 @@ public final class MicroSurveysSDK {
         ) { [weak self] _ in
             self?.refreshConfigIfStale()
         }
+        // The app may be suspended or killed in the background: send what was counted first.
+        backgroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.flushEventCounts()
+        }
     }
 
     deinit {
+        eventCountsTimer?.invalidate()
         if let foregroundObserver {
             NotificationCenter.default.removeObserver(foregroundObserver)
+        }
+        if let backgroundObserver {
+            NotificationCenter.default.removeObserver(backgroundObserver)
         }
     }
 
@@ -213,7 +281,7 @@ public final class MicroSurveysSDK {
         let userProps = identity.userProperties
         let shownAt = Date()
 
-        presenter.present(survey: survey) { [weak self] result in
+        let presented = presenter.present(survey: survey) { [weak self] result in
             guard let self, let result else { return }
             let context = DeviceContext.current()
             // Impression is finalized at close, so `dismissed` is authoritative.
@@ -237,6 +305,12 @@ public final class MicroSurveysSDK {
                                               context: context,
                                               answers: result.answers)
             }
+        }
+        let reason: DecisionReason = presented ? .shown
+            : (presentationAnchor?() ?? Presenter.topViewController()) == nil ? .notPresentable : .anotherSurveyShowing
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            self?.sendDebug(event: nil, properties: [:],
+                            decisions: [Decision(surveyId: survey.id, triggerId: trigger.id, reason: reason)])
         }
     }
     #else
@@ -269,6 +343,7 @@ extension MicroSurveysSDK: MSEventForwarding {
     }
 
     func forwardEvent(name: String, properties: [String: Any]) {
+        count(name: name, properties: properties)
         engine.process(name: name, properties: properties)
     }
 }

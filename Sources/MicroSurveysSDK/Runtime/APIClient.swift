@@ -177,6 +177,36 @@ final class APIClient {
         enqueue(path: "/api/sdk/responses", value: ResponseBatch(responses: [payload]))
     }
 
+    // MARK: Event signals
+
+    /// Queues one upload window of event counts. No clientId: a re-sent batch can
+    /// count twice, which is fine for "last seen" and trend lines.
+    func recordEventCounts(_ events: [EventCount], context: DeviceContext, sdkVersion: String) {
+        guard !events.isEmpty else { return }
+        let batch = EventCountsBatch(events: events,
+                                     context: .init(platform: context.platform,
+                                                    appVersion: context.appVersion,
+                                                    osVersion: context.osVersion,
+                                                    locale: context.locale,
+                                                    sdkVersion: sdkVersion))
+        MSLog.info("event counts queued (\(events.count) event name(s))")
+        enqueue(path: "/api/sdk/events", value: batch)
+    }
+
+    // MARK: Live debugger
+
+    /// Sends one debugger entry from a test device.
+    func recordDebug(_ entry: DebugEntry, endUserId: String, context: DeviceContext, sdkVersion: String) {
+        let batch = DebugBatch(entries: [entry],
+                               endUserId: endUserId,
+                               context: .init(platform: context.platform,
+                                              appVersion: context.appVersion,
+                                              osVersion: context.osVersion,
+                                              locale: context.locale,
+                                              sdkVersion: sdkVersion))
+        enqueue(path: "/api/sdk/debug", value: batch)
+    }
+
     private func enqueue<T: Encodable>(path: String, value: T) {
         guard let body = try? JSONEncoder().encode(value) else { return }
         outbox.enqueue(path: path, body: body)
@@ -186,8 +216,9 @@ final class APIClient {
     // MARK: Flush
 
     /// Attempts to POST all queued entries in order. Stops at the first failure
-    /// (likely offline) and leaves the rest for next time. Successful entries
-    /// are removed; idempotency keys make re-sends safe.
+    /// (likely offline) and leaves the rest for next time. Entries queued while a
+    /// flush is running are sent by the same flush, so nothing waits for the next
+    /// event. Successful entries are removed; idempotency keys make re-sends safe.
     func flush() {
         flushLock.lock()
         if isFlushing { flushLock.unlock(); return }
@@ -198,12 +229,19 @@ final class APIClient {
             defer {
                 flushLock.lock(); isFlushing = false; flushLock.unlock()
             }
-            for entry in outbox.snapshot() {
-                do {
-                    try await post(path: entry.path, body: entry.body)
-                    outbox.remove(id: entry.id)
-                } catch {
-                    break   // network/server problem — retry on the next flush
+            // Guards against re-sending an entry whose removal didn't persist.
+            var sent = Set<String>()
+            drain: while true {
+                let pending = outbox.snapshot().filter { !sent.contains($0.id) }
+                if pending.isEmpty { break }
+                for entry in pending {
+                    do {
+                        try await post(path: entry.path, body: entry.body)
+                        outbox.remove(id: entry.id)
+                        sent.insert(entry.id)
+                    } catch {
+                        break drain   // network/server problem — retry on the next flush
+                    }
                 }
             }
         }

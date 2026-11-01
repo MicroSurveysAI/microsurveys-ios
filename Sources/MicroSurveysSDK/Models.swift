@@ -317,6 +317,13 @@ public struct SDKConfig: Codable, Equatable {
     public let projectId: String
     public let fetchedAt: String?
     public let surveys: [Survey]
+    /// The project turned event signals on: count tracked events and upload the
+    /// counts (see `EventCounter`). Optional because older servers and cached
+    /// configs don't have it; missing means off.
+    public let eventSignals: Bool?
+    /// Hashes of the project's test devices for the live debugger (see `DebugKey`).
+    /// Optional for the same reason; missing means no test devices.
+    public let debugUsers: [String]?
 }
 
 // MARK: - Answer submission

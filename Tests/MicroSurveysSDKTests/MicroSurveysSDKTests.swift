@@ -262,6 +262,99 @@ final class MicroSurveysSDKTests: XCTestCase {
         XCTAssertEqual(Set(json.keys), ["platform", "osVersion"])
     }
 
+    // MARK: - Event signals
+
+    func testEventCounterKeepsPropertyNamesNotValues() throws {
+        let counter = EventCounter()
+        counter.record(name: "checkout", properties: ["cart": 3, "coupon": "SAVE10"], at: Date(timeIntervalSince1970: 1))
+        counter.record(name: "checkout", properties: ["screen": "cart"], at: Date(timeIntervalSince1970: 3))
+        counter.record(name: "app_opened", at: Date(timeIntervalSince1970: 2))
+        let counts = counter.drain()
+        XCTAssertEqual(counts.map(\.name), ["checkout", "app_opened"])
+        XCTAssertEqual(counts[0].count, 2)
+        XCTAssertEqual(counts[0].propertyKeys, ["cart", "coupon", "screen"])
+        XCTAssertEqual(counts[0].firstSeenAt, "1970-01-01T00:00:01Z")
+        XCTAssertEqual(counts[0].lastSeenAt, "1970-01-01T00:00:03Z")
+        let json = String(data: try JSONEncoder().encode(counts), encoding: .utf8)!
+        XCTAssertFalse(json.contains("SAVE10"))
+        XCTAssertEqual(counter.size, 0)
+    }
+
+    func testEventCounterCapsNamesAndKeys() {
+        let counter = EventCounter()
+        for i in 0..<(EventCounter.maxNames + 5) { counter.record(name: "e\(i)") }
+        XCTAssertEqual(counter.size, EventCounter.maxNames)
+        var props: [String: Any] = [:]
+        for i in 0..<30 { props["k\(i)"] = i }
+        counter.record(name: "e0", properties: props)
+        XCTAssertEqual(counter.drain().first?.propertyKeys.count, EventCounter.maxKeys)
+        counter.record(name: "")
+        counter.record(name: String(repeating: "x", count: 201))
+        XCTAssertEqual(counter.size, 0)
+    }
+
+    func testConfigWithoutEventSignalsDecodesAsOff() throws {
+        // Older servers and cached configs don't send the field.
+        let old = try JSONDecoder().decode(SDKConfig.self, from: Data(#"{"projectId":"p","surveys":[]}"#.utf8))
+        XCTAssertNil(old.eventSignals)
+        let on = try JSONDecoder().decode(SDKConfig.self, from: Data(#"{"projectId":"p","surveys":[],"eventSignals":true}"#.utf8))
+        XCTAssertEqual(on.eventSignals, true)
+    }
+
+    func testEventCountsBatchShape() throws {
+        let batch = EventCountsBatch(events: [EventCount(name: "a", count: 1, firstSeenAt: "t", lastSeenAt: "t", propertyKeys: [])],
+                                     context: .init(platform: "ios", appVersion: nil, osVersion: "26.1", locale: nil,
+                                                    sdkVersion: MicroSurveysSDK.sdkVersion))
+        let json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(batch)) as! [String: Any]
+        XCTAssertEqual(json["context"] as? [String: String], ["platform": "ios", "osVersion": "26.1", "sdkVersion": "0.0.0"])
+        XCTAssertEqual((json["events"] as? [[String: Any]])?.first?["name"] as? String, "a")
+    }
+
+    // MARK: - Live debugger
+
+    func testDebugKeyMatchesOtherSDKs() {
+        // Shared vector: the web and React Native SDKs assert the same value.
+        XCTAssertEqual(DebugKey.make(projectId: "p1", endUserId: "u1"), "309cd11f")
+    }
+
+    func testDebugPropertiesSummariseNestedValues() {
+        let props = DebugEntry.displayProperties(["a": String(repeating: "x", count: 250), "b": 2, "c": [1, 2], "d": ["e": 1]])
+        XCTAssertEqual(props["a"], .string(String(repeating: "x", count: 200) + "…"))
+        XCTAssertEqual(props["b"], .number(2))
+        XCTAssertEqual(props["c"], .string("[2 items]"))
+        XCTAssertEqual(props["d"], .string("{…}"))
+    }
+
+    func testEngineReportsWhyASurveyWasSkipped() throws {
+        let decide = { (surveyJSON: String, event: String, props: [String: Any]) -> [Decision] in
+            let survey = try! JSONDecoder().decode(Survey.self, from: Data(surveyJSON.utf8))
+            let defaults = UserDefaults(suiteName: "debug-test-\(UUID().uuidString)")!
+            let engine = TriggerEngine(store: TriggerStateStore(defaults: defaults),
+                                       identityProvider: { MSIdentity(anonymousId: "u1") })
+            engine.surveysProvider = { [survey] }
+            let done = self.expectation(description: "evaluated")
+            var got: [Decision] = []
+            engine.onEvaluated = { _, _, decisions in got = decisions; done.fulfill() }
+            engine.process(name: event, properties: props)
+            self.wait(for: [done], timeout: 2)
+            return got
+        }
+        func survey(_ extra: String = "", match: String = "{}", sample: Int = 100) -> String {
+            #"{"id":"s1","name":"S","questions":[],"samplePercent":\#(sample),"maxPerUserDays":0\#(extra),"triggers":[{"id":"t","type":"SINGLE","delaySeconds":2,"fireEvery":1,"warmupCount":0,"steps":[{"order":0,"event":"checkout","match":\#(match)}]}]}"#
+        }
+        XCTAssertEqual(decide(survey(), "checkout", [:]),
+                       [Decision(surveyId: "s1", triggerId: "t", reason: .eligible, delaySeconds: 2)])
+        XCTAssertEqual(decide(survey(), "app_opened", [:]), [])
+        XCTAssertEqual(decide(survey(match: #"{"screen":"cart"}"#), "checkout", ["screen": "home"]).map(\.reason), [.propertyMismatch])
+        XCTAssertEqual(decide(survey(#","platforms":["web"]"#), "checkout", [:]).map(\.reason), [.platform])
+        XCTAssertEqual(decide(survey(sample: 0), "checkout", [:]).map(\.reason), [.sampledOut])
+    }
+
+    func testConfigWithoutDebugUsersDecodes() throws {
+        let config = try JSONDecoder().decode(SDKConfig.self, from: Data(#"{"projectId":"p","surveys":[]}"#.utf8))
+        XCTAssertNil(config.debugUsers)
+    }
+
     func testCurrentContextIsIOS() {
         let context = DeviceContext.current()
         XCTAssertEqual(context.platform, "ios")
