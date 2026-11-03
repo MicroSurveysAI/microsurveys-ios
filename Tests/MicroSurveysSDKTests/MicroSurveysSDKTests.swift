@@ -334,7 +334,7 @@ final class MicroSurveysSDKTests: XCTestCase {
             engine.surveysProvider = { [survey] }
             let done = self.expectation(description: "evaluated")
             var got: [Decision] = []
-            engine.onEvaluated = { _, _, decisions in got = decisions; done.fulfill() }
+            engine.onEvaluated = { _, _, decisions, _ in got = decisions; done.fulfill() }
             engine.process(name: event, properties: props)
             self.wait(for: [done], timeout: 2)
             return got
@@ -359,6 +359,153 @@ final class MicroSurveysSDKTests: XCTestCase {
         let context = DeviceContext.current()
         XCTAssertEqual(context.platform, "ios")
         XCTAssertNotNil(context.osVersion)
+    }
+
+    // MARK: - Server events (API-CONTRACT §6)
+
+    func testConfigServerEventsFields() throws {
+        let old = try JSONDecoder().decode(SDKConfig.self, from: Data(#"{"projectId":"p","surveys":[]}"#.utf8))
+        XCTAssertNil(old.pendingEvents)
+        XCTAssertNil(old.serverEvents)
+        let raw = Data(#"{"projectId":"p","surveys":[],"pendingEvents":true,"serverEvents":["journey_completed","order_shipped"]}"#.utf8)
+        let on = try JSONDecoder().decode(SDKConfig.self, from: raw)
+        XCTAssertEqual(on.pendingEvents, true)
+        XCTAssertEqual(on.serverEvents, ["journey_completed", "order_shipped"])
+
+        let store = ConfigStore(defaults: UserDefaults(suiteName: "config-test-\(UUID().uuidString)")!)
+        XCTAssertFalse(store.pendingEvents)
+        XCTAssertEqual(store.serverEvents, [])
+        store.save(rawConfig: raw, etag: nil)
+        XCTAssertTrue(store.pendingEvents)
+        XCTAssertEqual(store.serverEvents, ["journey_completed", "order_shipped"])
+    }
+
+    func testPendingEventsShapes() throws {
+        let body = try JSONSerialization.jsonObject(with: JSONEncoder().encode(PendingEventsRequest(userId: nil, deviceId: "d1")))
+        XCTAssertEqual(body as? [String: String], ["deviceId": "d1"])
+
+        let json = #"{"events":[{"id":"e1","name":"journey_completed","properties":{"flow":"airport","n":2},"occurredAt":"2026-11-03T09:03:21.250Z"},{"id":"e2","name":"x","occurredAt":"2026-11-03T09:03:21Z"}]}"#
+        let events = try JSONDecoder().decode(PendingEventsResponse.self, from: Data(json.utf8)).events
+        XCTAssertEqual(events.map(\.id), ["e1", "e2"])
+        XCTAssertEqual(events[0].occurredDate?.timeIntervalSince1970 ?? 0, 1_793_696_601.25, accuracy: 0.001)
+        XCTAssertEqual(events[1].occurredDate?.timeIntervalSince1970, 1_793_696_601)
+        XCTAssertEqual(events[0].plainProperties["flow"] as? String, "airport")
+        XCTAssertEqual(events[0].plainProperties["n"] as? Double, 2)
+        XCTAssertEqual(events[1].properties, [:])
+    }
+
+    func testReplayOrderIsByOccurredAt() {
+        let fallback = Date(timeIntervalSince1970: 1_000)
+        let events = [
+            PendingEvent(id: "b", name: "b", occurredAt: "2026-11-03T09:00:02.000Z"),
+            PendingEvent(id: "a", name: "a", occurredAt: "2026-11-03T09:00:01.000Z"),
+            PendingEvent(id: "c", name: "c", occurredAt: "2026-11-03T09:00:02.000Z"),
+            PendingEvent(id: "z", name: "z", occurredAt: "not a date"),
+        ]
+        let ordered = PendingEvent.replayOrder(events, fallback: fallback)
+        XCTAssertEqual(ordered.map(\.event.id), ["z", "a", "b", "c"])
+        XCTAssertEqual(ordered.first?.at, fallback)
+    }
+
+    func testSequenceIgnoresStepFromBeforeItStarted() throws {
+        let trigger = try sequenceTrigger(window: nil)
+        let started = TriggerSequencer.advance(trigger: trigger, record: TriggerRecord(),
+                                               eventName: "page_view", properties: ["screen": "Wallet"], nowT: 1_000).0
+        // Step 1 happened before step 0: ignored, and the sequence isn't reset.
+        let early = TriggerSequencer.advance(trigger: trigger, record: started,
+                                             eventName: "wallet_tap", properties: [:], nowT: 900)
+        XCTAssertFalse(early.1)
+        XCTAssertEqual(early.0.stepIndex, 1)
+        XCTAssertEqual(early.0.startedAt, 1_000)
+        // An earlier step-0 event doesn't restart it either.
+        let earlyStart = TriggerSequencer.advance(trigger: trigger, record: started,
+                                                  eventName: "page_view", properties: ["screen": "Wallet"], nowT: 900)
+        XCTAssertEqual(earlyStart.0.startedAt, 1_000)
+        // At or after the start, it advances.
+        XCTAssertTrue(TriggerSequencer.advance(trigger: trigger, record: started,
+                                               eventName: "wallet_tap", properties: [:], nowT: 1_000).1)
+    }
+
+    func testReplayedStepUsesEventTimeForSequenceWindow() throws {
+        let t: TimeInterval = 1_793_696_601
+        var clock = Date(timeIntervalSince1970: t)
+        let survey = try JSONDecoder().decode(Survey.self, from: Data(#"{"id":"s1","name":"S","questions":[],"samplePercent":100,"maxPerUserDays":0,"triggers":[{"id":"t","type":"SEQUENCE","sequenceWindowSeconds":7200,"delaySeconds":0,"fireEvery":1,"warmupCount":0,"steps":[{"order":0,"event":"book_click","match":{}},{"order":1,"event":"journey_completed","match":{}}]}]}"#.utf8))
+        let defaults = UserDefaults(suiteName: "replay-test-\(UUID().uuidString)")!
+        let engine = TriggerEngine(store: TriggerStateStore(defaults: defaults),
+                                   identityProvider: { MSIdentity(anonymousId: "u1") },
+                                   now: { clock })
+        engine.surveysProvider = { [survey] }
+        func run(_ name: String, occurredAt: Date? = nil) -> [Decision] {
+            let done = expectation(description: name)
+            var got: [Decision] = []
+            engine.onEvaluated = { _, _, decisions, _ in got = decisions; done.fulfill() }
+            engine.process(name: name, properties: [:], occurredAt: occurredAt)
+            wait(for: [done], timeout: 2)
+            return got
+        }
+
+        _ = run("book_click")
+        clock = Date(timeIntervalSince1970: t + 60)
+        XCTAssertTrue(engine.isWaitingOnServerEvent(serverEvents: ["journey_completed"]))
+        XCTAssertFalse(engine.isWaitingOnServerEvent(serverEvents: ["book_click"]))
+        // The app opens 20 hours later; the ride finished 40 minutes after booking.
+        clock = Date(timeIntervalSince1970: t + 20 * 3600)
+        XCTAssertFalse(engine.isWaitingOnServerEvent(serverEvents: ["journey_completed"]),
+                       "waiting stops 3 hours after the sequence started")
+        XCTAssertEqual(run("journey_completed", occurredAt: Date(timeIntervalSince1970: t + 40 * 60)).map(\.reason),
+                       [.eligible])
+
+        // The same step tracked live 20 hours on is outside the 2-hour window.
+        _ = run("book_click", occurredAt: Date(timeIntervalSince1970: t + 20 * 3600))
+        clock = Date(timeIntervalSince1970: t + 40 * 3600)
+        XCTAssertEqual(run("journey_completed").map(\.reason), [.sequenceInProgress])
+    }
+
+    func testWaitingOnServerEvent() throws {
+        let trigger = try sequenceTrigger(window: nil)
+        var record = TriggerRecord()
+        let events: Set<String> = ["wallet_tap"]
+        func waits(_ record: TriggerRecord?, _ trigger: Trigger, events: Set<String> = events, at nowT: TimeInterval) -> Bool {
+            TriggerSequencer.waitsOnServerEvent(trigger: trigger, record: record, serverEvents: events, nowT: nowT)
+        }
+        XCTAssertFalse(waits(nil, trigger, at: 0))
+        XCTAssertFalse(waits(record, trigger, at: 0), "not started")
+        record = TriggerSequencer.advance(trigger: trigger, record: record,
+                                          eventName: "page_view", properties: ["screen": "Wallet"], nowT: 0).0
+        XCTAssertTrue(waits(record, trigger, at: 60))
+        XCTAssertFalse(waits(record, trigger, events: ["page_view"], at: 60), "next step isn't a server event")
+        XCTAssertTrue(waits(record, trigger, at: 3 * 3600 - 1))
+        XCTAssertFalse(waits(record, trigger, at: 3 * 3600), "stops 3 hours after it started")
+        let single = try decodeTrigger(#"{"id":"s","type":"SINGLE","steps":[{"order":0,"event":"wallet_tap"}]}"#)
+        XCTAssertFalse(waits(record, single, at: 60))
+    }
+
+    func testMailboxFetchesAgainOnceAfterAFullPage() {
+        func run(pages: [Int], ids: (String?, String?) = ("u1", nil), enabled: Bool = true) -> (fetches: Int, replayed: [Int]) {
+            let mailbox = ServerEventsMailbox()
+            var fetches = 0
+            var replayed: [Int] = []
+            let done = expectation(description: "checked")
+            done.isInverted = pages.isEmpty
+            mailbox.isEnabled = { enabled }
+            mailbox.ids = { ids }
+            mailbox.fetch = { _, _ in
+                let count = pages.isEmpty ? 0 : pages[min(fetches, pages.count - 1)]
+                fetches += 1
+                return (0..<count).map { PendingEvent(id: "\($0)", name: "e", occurredAt: "2026-11-03T09:00:00Z") }
+            }
+            mailbox.replay = { events in
+                replayed.append(events.count)
+                if replayed.count == min(pages.count, 2) { done.fulfill() }
+            }
+            mailbox.check()
+            wait(for: [done], timeout: pages.isEmpty ? 0.3 : 2)
+            return (fetches, replayed)
+        }
+        XCTAssertEqual(run(pages: [3]).replayed, [3])
+        XCTAssertEqual(run(pages: [50, 50, 50]).replayed, [50, 50], "one extra call, not a loop")
+        XCTAssertEqual(run(pages: [], ids: (nil, nil)).fetches, 0, "no id to ask with")
+        XCTAssertEqual(run(pages: [], enabled: false).fetches, 0)
     }
 
     private func decodeTrigger(_ json: String) throws -> Trigger {

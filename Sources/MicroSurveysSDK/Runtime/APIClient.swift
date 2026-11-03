@@ -2,7 +2,7 @@
 //  APIClient.swift
 //  MicroSurveysSDK
 //
-//  URLSession-based async client for the three SDK endpoints, plus a tiny
+//  URLSession-based async client for the SDK endpoints, plus a tiny
 //  persistent outbox so impressions/responses survive offline launches and
 //  flush on the next start. Every impression/response carries a UUID `clientId`
 //  so the server upserts and retries never duplicate (API-CONTRACT §Idempotency).
@@ -205,6 +205,27 @@ final class APIClient {
                                               locale: context.locale,
                                               sdkVersion: sdkVersion))
         enqueue(path: "/api/sdk/debug", value: batch)
+    }
+
+    // MARK: Server events
+
+    /// `POST /api/sdk/pending`: takes this user's waiting server events, oldest first.
+    /// Not queued: each event is handed out once, and a failed check is simply retried
+    /// at the next scheduled one.
+    func fetchPendingEvents(userId: String?, deviceId: String?) async throws -> [PendingEvent] {
+        var request = URLRequest(url: endpoint("/api/sdk/pending"))
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue(apiVersion, forHTTPHeaderField: "MS-Api-Version")
+        request.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(PendingEventsRequest(userId: userId, deviceId: deviceId))
+
+        let (data, response) = try await send(request)
+        guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
+        guard (200..<300).contains(http.statusCode) else { throw APIError.http(http.statusCode) }
+        let events = try JSONDecoder().decode(PendingEventsResponse.self, from: data).events
+        MSLog.info("pending: \(events.count) server event(s)\(events.isEmpty ? "" : ": \(events.map(\.name))")")
+        return events
     }
 
     private func enqueue<T: Encodable>(path: String, value: T) {

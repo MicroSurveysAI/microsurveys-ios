@@ -324,6 +324,12 @@ public struct SDKConfig: Codable, Equatable {
     /// Hashes of the project's test devices for the live debugger (see `DebugKey`).
     /// Optional for the same reason; missing means no test devices.
     public let debugUsers: [String]?
+    /// The project has server events set up: check the mailbox (`POST /api/sdk/pending`)
+    /// for events the app never saw. Optional for the same reason; missing means off.
+    public let pendingEvents: Bool?
+    /// Trigger event names that arrive as server events. A sequence waiting on one of
+    /// them as its next step checks the mailbox more often. Missing means none.
+    public let serverEvents: [String]?
 }
 
 // MARK: - Answer submission

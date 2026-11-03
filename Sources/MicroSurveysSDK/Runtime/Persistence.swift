@@ -62,6 +62,18 @@ final class ConfigStore {
         return decodedConfig?.eventSignals ?? false
     }
 
+    /// Whether the SDK should check the server-events mailbox (false when unknown).
+    var pendingEvents: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return decodedConfig?.pendingEvents ?? false
+    }
+
+    /// Trigger event names that arrive as server events (empty when unknown).
+    var serverEvents: [String] {
+        lock.lock(); defer { lock.unlock() }
+        return decodedConfig?.serverEvents ?? []
+    }
+
     /// The cached project id and test-device hashes, for the live debugger.
     var debugTarget: (projectId: String, users: [String])? {
         lock.lock(); defer { lock.unlock() }

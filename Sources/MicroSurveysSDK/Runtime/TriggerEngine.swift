@@ -15,6 +15,10 @@
 //  fire time. Evaluation runs on a serial queue off the main thread; the
 //  presentation callback is dispatched to main.
 //
+//  Replayed server events (API-CONTRACT §6) carry the time they happened:
+//  sequence progress and `sequenceWindowSeconds` use that time; the window,
+//  cap and delay use the current time.
+//
 
 import Foundation
 
@@ -56,8 +60,9 @@ final class TriggerEngine {
     /// Invoked on the **main** queue when a survey should be presented now.
     var onPresent: ((Survey, Trigger, MSIdentity) -> Void)?
     /// Invoked on the engine queue after each event with every decision about a
-    /// survey whose trigger names it (empty when none does). For the live debugger.
-    var onEvaluated: ((String, [String: Any], [Decision]) -> Void)?
+    /// survey whose trigger names it (empty when none does), and the replayed
+    /// event's `occurredAt` (nil for a live event). For the live debugger.
+    var onEvaluated: ((String, [String: Any], [Decision], Date?) -> Void)?
     /// Invoked on the engine queue for a decision made after the event, when a
     /// delayed survey's cap is re-checked.
     var onLateDecision: ((Decision) -> Void)?
@@ -78,19 +83,39 @@ final class TriggerEngine {
     // MARK: Entry point
 
     /// Feed an event into the engine. Returns immediately; evaluation is async.
-    func process(name: String, properties: [String: Any]) {
+    /// `occurredAt` is set for a replayed server event: when it actually happened.
+    func process(name: String, properties: [String: Any], occurredAt: Date? = nil) {
         queue.async { [weak self] in
-            self?.evaluate(name: name, properties: properties)
+            self?.evaluate(name: name, properties: properties, occurredAt: occurredAt)
+        }
+    }
+
+    /// Whether a sequence for the current user is waiting on a server event as its
+    /// next step (see `TriggerSequencer.waitsOnServerEvent`). Thread-safe.
+    func isWaitingOnServerEvent(serverEvents: [String]) -> Bool {
+        guard !serverEvents.isEmpty else { return false }
+        let names = Set(serverEvents)
+        let state = store.load(endUserId: identityProvider().endUserId)
+        let nowT = now().timeIntervalSince1970
+        return surveysProvider().contains { survey in
+            (survey.triggers ?? []).contains { trigger in
+                TriggerSequencer.waitsOnServerEvent(trigger: trigger,
+                                                    record: state.triggers[trigger.id],
+                                                    serverEvents: names,
+                                                    nowT: nowT)
+            }
         }
     }
 
     // MARK: Evaluation
 
-    private func evaluate(name: String, properties: [String: Any]) {
+    private func evaluate(name: String, properties: [String: Any], occurredAt: Date?) {
         let identity = identityProvider()
         let endUserId = identity.endUserId
         var state = store.load(endUserId: endUserId)
         let nowDate = now()
+        // Sequence progress runs on when the event happened.
+        let eventDate = occurredAt ?? nowDate
         var decisions: [Decision] = []
 
         for survey in surveysProvider() {
@@ -111,7 +136,7 @@ final class TriggerEngine {
                                         state: &state,
                                         eventName: name,
                                         properties: properties,
-                                        nowDate: nowDate)
+                                        eventDate: eventDate)
                 let skip: (DecisionReason) -> Void = {
                     decisions.append(Decision(surveyId: survey.id, triggerId: trigger.id, reason: $0))
                 }
@@ -167,7 +192,7 @@ final class TriggerEngine {
         }
 
         store.save(endUserId: endUserId, state: state)
-        onEvaluated?(name, properties, decisions)
+        onEvaluated?(name, properties, decisions, occurredAt)
     }
 
     // MARK: Trigger advancement
@@ -178,13 +203,13 @@ final class TriggerEngine {
                          state: inout UserTriggerState,
                          eventName: String,
                          properties: [String: Any],
-                         nowDate: Date) -> Bool {
+                         eventDate: Date) -> Bool {
         let record = state.triggers[trigger.id] ?? TriggerRecord()
         let (updated, satisfied) = TriggerSequencer.advance(trigger: trigger,
                                                             record: record,
                                                             eventName: eventName,
                                                             properties: properties,
-                                                            nowT: nowDate.timeIntervalSince1970)
+                                                            nowT: eventDate.timeIntervalSince1970)
         state.triggers[trigger.id] = updated
         return satisfied
     }

@@ -45,6 +45,7 @@ public final class MicroSurveysSDK {
     private let engine: TriggerEngine
     private let eventCounter = EventCounter()
     private var eventCountsTimer: Timer?
+    private let mailbox = ServerEventsMailbox()
 
     #if canImport(UIKit)
     private let presenter = Presenter()
@@ -80,6 +81,7 @@ public final class MicroSurveysSDK {
                                     identityProvider: { identityStore.snapshot() })
 
         configureEngine()
+        configureMailbox()
         applyCachedTheme()
         startLifecycleObserver()
     }
@@ -91,22 +93,56 @@ public final class MicroSurveysSDK {
         engine.onPresent = { [weak self] survey, trigger, identity in
             self?.present(survey: survey, trigger: trigger, identity: identity)
         }
-        engine.onEvaluated = { [weak self] name, properties, decisions in
-            self?.sendDebug(event: name, properties: DebugEntry.displayProperties(properties), decisions: decisions)
+        engine.onEvaluated = { [weak self] name, properties, decisions, occurredAt in
+            self?.sendDebug(event: name, properties: DebugEntry.displayProperties(properties), decisions: decisions,
+                            at: occurredAt ?? Date())
         }
         engine.onLateDecision = { [weak self] decision in
             self?.sendDebug(event: nil, properties: [:], decisions: [decision])
         }
     }
 
+    private func configureMailbox() {
+        mailbox.isEnabled = { [weak self] in
+            self?.configStore.pendingEvents ?? false
+        }
+        mailbox.isWaiting = { [weak self] in
+            guard let self else { return false }
+            return self.engine.isWaitingOnServerEvent(serverEvents: self.configStore.serverEvents)
+        }
+        mailbox.ids = { [weak self] in
+            guard let identity = self?.identityStore.snapshot() else { return (nil, nil) }
+            return (identity.amplitudeUserId ?? identity.hostUserId, identity.amplitudeDeviceId)
+        }
+        mailbox.fetch = { [weak self] userId, deviceId in
+            guard let self else { return [] }
+            return try await self.apiClient.fetchPendingEvents(userId: userId, deviceId: deviceId)
+        }
+        mailbox.replay = { [weak self] events in
+            self?.replay(events)
+        }
+    }
+
+    // MARK: Server events
+
+    /// Replays server events like `track(_:properties:)`, in the order they
+    /// happened, with two differences: sequence progress uses each event's
+    /// `occurredAt`, and they aren't counted in event signals.
+    private func replay(_ events: [PendingEvent]) {
+        for (event, at) in PendingEvent.replayOrder(events, fallback: Date()) {
+            engine.process(name: event.name, properties: event.plainProperties, occurredAt: at)
+        }
+    }
+
     // MARK: Live debugger
 
     /// Sends a debugger entry when the dashboard picked the current user as a test device.
-    private func sendDebug(event: String?, properties: [String: JSONValue], decisions: [Decision]) {
+    /// `at` is when the event happened (a replayed server event's `occurredAt`).
+    private func sendDebug(event: String?, properties: [String: JSONValue], decisions: [Decision], at: Date = Date()) {
         guard let target = configStore.debugTarget else { return }
         let endUserId = identityStore.snapshot().endUserId
         guard target.users.contains(DebugKey.make(projectId: target.projectId, endUserId: endUserId)) else { return }
-        apiClient.recordDebug(DebugEntry(at: MSTime.string(from: Date()), event: event,
+        apiClient.recordDebug(DebugEntry(at: MSTime.string(from: at), event: event,
                                          properties: properties, decisions: decisions),
                               endUserId: endUserId,
                               context: DeviceContext.current(),
@@ -121,7 +157,10 @@ public final class MicroSurveysSDK {
     public func start() {
         MSLog.info("start: key=\(apiKey.prefix(11))…, base=\(apiBaseURL.absoluteString)")
         apiClient.flush()
-        refreshConfig()
+        // Checks the server-events mailbox now if the cached config has it on, or
+        // once the fetched config turns it on.
+        mailbox.start()
+        loadConfig { [weak self] in self?.mailbox.resume() }
         startEventCountsTimer()
     }
 
@@ -157,8 +196,14 @@ public final class MicroSurveysSDK {
     /// Foreground refresh is automatic (see `refreshConfigIfStale`); call this
     /// directly only to force an unconditional refresh.
     public func refreshConfig() {
+        loadConfig()
+    }
+
+    /// Fetches config, then calls `done` whether or not the fetch succeeded.
+    private func loadConfig(then done: (() -> Void)? = nil) {
         Task { [weak self] in
             guard let self else { return }
+            defer { done?() }
             do {
                 let result = try await self.apiClient.fetchConfig(etag: self.configStore.etag)
                 switch result {
@@ -232,7 +277,8 @@ public final class MicroSurveysSDK {
         set { presenter.presentationAnchor = newValue }
     }
 
-    /// Refreshes config on every app-foreground, throttled by `configTTL`.
+    /// Refreshes config on every app-foreground, throttled by `configTTL`, and
+    /// checks the server-events mailbox (not throttled).
     private func startLifecycleObserver() {
         foregroundObserver = NotificationCenter.default.addObserver(
             forName: UIApplication.didBecomeActiveNotification,
@@ -240,6 +286,7 @@ public final class MicroSurveysSDK {
             queue: .main
         ) { [weak self] _ in
             self?.refreshConfigIfStale()
+            self?.mailbox.resume()
         }
         // The app may be suspended or killed in the background: send what was counted first.
         backgroundObserver = NotificationCenter.default.addObserver(
@@ -248,6 +295,7 @@ public final class MicroSurveysSDK {
             queue: .main
         ) { [weak self] _ in
             self?.flushEventCounts()
+            self?.mailbox.pause()
         }
     }
 

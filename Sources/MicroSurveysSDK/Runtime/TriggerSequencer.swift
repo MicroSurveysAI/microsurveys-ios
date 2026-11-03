@@ -11,7 +11,8 @@ import Foundation
 
 enum TriggerSequencer {
 
-    /// Advances `record` for one event.
+    /// Advances `record` for one event. `nowT` is when the event happened: the
+    /// current time for a live event, `occurredAt` for a replayed server event.
     ///
     /// - Returns: the updated record and whether the trigger's full condition is
     ///   now satisfied. On satisfaction the record's `satisfiedCount` is bumped
@@ -39,6 +40,12 @@ enum TriggerSequencer {
 
         case .sequence:
             let expected = min(record.stepIndex, steps.count - 1)
+
+            // An event from before this sequence started (a late-arriving server
+            // event) can't continue it, and doesn't reset it either.
+            if expected != 0, let startedAt = record.startedAt, nowT < startedAt {
+                return (record, false)
+            }
 
             if matchesStep(expected) {
                 if expected == 0 {
@@ -77,6 +84,26 @@ enum TriggerSequencer {
 
         if satisfied { record.satisfiedCount += 1 }
         return (record, satisfied)
+    }
+
+    /// How long after a sequence starts the SDK keeps checking the mailbox often
+    /// for its next step (see `waitsOnServerEvent`).
+    static let serverEventWaitLimit: TimeInterval = 3 * 60 * 60
+
+    /// Whether `trigger` is a sequence that has started (step 1+ reached) and whose
+    /// next step is an event in `serverEvents`, started less than
+    /// `serverEventWaitLimit` ago. While any trigger waits like this, the SDK checks
+    /// the server-events mailbox every minute.
+    static func waitsOnServerEvent(trigger: Trigger,
+                                   record: TriggerRecord?,
+                                   serverEvents: Set<String>,
+                                   nowT: TimeInterval) -> Bool {
+        guard trigger.type == .sequence,
+              let record, record.stepIndex > 0, let startedAt = record.startedAt,
+              nowT - startedAt < serverEventWaitLimit else { return false }
+        let steps = trigger.steps.sorted { $0.order < $1.order }
+        guard record.stepIndex < steps.count else { return false }
+        return serverEvents.contains(steps[record.stepIndex].event)
     }
 
     static func windowExpired(window: Int?, startedAt: TimeInterval?, nowT: TimeInterval) -> Bool {

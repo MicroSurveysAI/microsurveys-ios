@@ -214,6 +214,74 @@ enum MSTime {
         return f
     }()
 
+    /// Same, with milliseconds (`2026-11-03T09:03:21.000Z`), as the server sends times.
+    static let iso8601Fractional: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+
     static func string(from date: Date) -> String { iso8601.string(from: date) }
-    static func date(from string: String) -> Date? { iso8601.date(from: string) }
+    /// Accepts times with or without fractional seconds.
+    static func date(from string: String) -> Date? {
+        iso8601.date(from: string) ?? iso8601Fractional.date(from: string)
+    }
+}
+
+// MARK: - Server events mailbox (API-CONTRACT §6)
+
+/// Body of `POST /api/sdk/pending`. Nil ids are left out of the JSON.
+struct PendingEventsRequest: Encodable {
+    let userId: String?
+    let deviceId: String?
+}
+
+/// An event the app's backend sent to Amplitude, waiting for this user's app.
+struct PendingEvent: Decodable, Equatable {
+    let id: String
+    let name: String
+    /// Only the keys triggers match on.
+    let properties: [String: JSONValue]
+    /// When it happened (ISO 8601), not when it arrived.
+    let occurredAt: String
+
+    private enum CodingKeys: String, CodingKey { case id, name, properties, occurredAt }
+
+    init(id: String, name: String, properties: [String: JSONValue] = [:], occurredAt: String) {
+        self.id = id
+        self.name = name
+        self.properties = properties
+        self.occurredAt = occurredAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        properties = try c.decodeIfPresent([String: JSONValue].self, forKey: .properties) ?? [:]
+        occurredAt = try c.decode(String.self, forKey: .occurredAt)
+    }
+
+    var occurredDate: Date? { MSTime.date(from: occurredAt) }
+
+    /// The properties as plain values, the shape `track(_:properties:)` takes.
+    var plainProperties: [String: Any] { properties.mapValues { $0.plainValue } }
+}
+
+struct PendingEventsResponse: Decodable {
+    let events: [PendingEvent]
+}
+
+extension JSONValue {
+    /// The Foundation value for this JSON (String, Double, Bool, NSNull, arrays, dictionaries).
+    var plainValue: Any {
+        switch self {
+        case .string(let s): return s
+        case .number(let n): return n
+        case .bool(let b):   return b
+        case .null:          return NSNull()
+        case .object(let o): return o.mapValues { $0.plainValue }
+        case .array(let a):  return a.map { $0.plainValue }
+        }
+    }
 }
