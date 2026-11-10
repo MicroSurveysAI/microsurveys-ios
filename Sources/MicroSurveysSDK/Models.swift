@@ -332,6 +332,39 @@ public struct SDKConfig: Codable, Equatable {
     public let serverEvents: [String]?
 }
 
+extension SDKConfig {
+    /// Decodes `surveys` one by one and skips any survey this SDK version can't
+    /// read (a newer question or trigger type, a missing field), so one such
+    /// survey never hides the others. Covers the fetch and the cached config.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        projectId = try c.decode(String.self, forKey: .projectId)
+        fetchedAt = try c.decodeIfPresent(String.self, forKey: .fetchedAt)
+        surveys = try c.decode([SkippableSurvey].self, forKey: .surveys).compactMap(\.survey)
+        eventSignals = try c.decodeIfPresent(Bool.self, forKey: .eventSignals)
+        debugUsers = try c.decodeIfPresent([String].self, forKey: .debugUsers)
+        pendingEvents = try c.decodeIfPresent(Bool.self, forKey: .pendingEvents)
+        serverEvents = try c.decodeIfPresent([String].self, forKey: .serverEvents)
+    }
+
+    /// One `surveys` element: the survey, or `nil` when it can't be decoded.
+    private struct SkippableSurvey: Decodable {
+        let survey: Survey?
+
+        private enum IdKey: String, CodingKey { case id }
+
+        init(from decoder: Decoder) throws {
+            do {
+                survey = try Survey(from: decoder)
+            } catch {
+                let id = (try? decoder.container(keyedBy: IdKey.self).decode(String.self, forKey: .id)) ?? "?"
+                MSLog.info("config: skipped survey \(id) this SDK version can't read: \(error)")
+                survey = nil
+            }
+        }
+    }
+}
+
 // MARK: - Answer submission
 
 /// A single question's answer, encoded to the exact JSON shape the backend

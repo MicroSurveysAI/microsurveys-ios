@@ -301,6 +301,20 @@ final class MicroSurveysSDKTests: XCTestCase {
         XCTAssertEqual(on.eventSignals, true)
     }
 
+    func testASurveyThisVersionCantShowIsSkippedNotTheWholeConfig() throws {
+        let json = """
+        { "projectId": "p", "surveys": [
+          { "id": "new", "name": "New", "questions": [{ "id": "q", "type": "MATRIX", "prompt": "?" }] },
+          { "id": "seq", "name": "Seq", "questions": [], "triggers": [{ "id": "t", "type": "FUNNEL", "steps": [] }] },
+          { "id": "bad", "questions": [] },
+          { "id": "ok", "name": "Ok", "questions": [{ "id": "q", "type": "THUMBS", "prompt": "?" }] }
+        ] }
+        """
+        let config = try JSONDecoder().decode(SDKConfig.self, from: Data(json.utf8))
+        XCTAssertEqual(config.surveys.map(\.id), ["ok"])
+        XCTAssertEqual(config.projectId, "p")
+    }
+
     func testEventCountsBatchShape() throws {
         let batch = EventCountsBatch(events: [EventCount(name: "a", count: 1, firstSeenAt: "t", lastSeenAt: "t", propertyKeys: [])],
                                      context: .init(platform: "ios", appVersion: nil, osVersion: "26.1", locale: nil,
