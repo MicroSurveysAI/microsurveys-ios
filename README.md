@@ -2,7 +2,9 @@
 
 Native, contextual in-app micro-surveys for **UIKit & SwiftUI** apps — ask the
 right user the right question at the right moment, triggered by the events you
-already track. No WebViews, no new instrumentation.
+already track. No WebViews, no new instrumentation. Part of
+[MicroSurveys.ai](https://microsurveys.ai); full guide in the
+[iOS SDK docs](https://docs.microsurveys.ai/ios-sdk/).
 
 - **Platforms:** iOS 14+ · Swift 5.9 · UIKit & SwiftUI
 - **Analytics:** works with [Amplitude](https://amplitude.com) out of the box, or
