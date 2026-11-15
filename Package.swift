@@ -6,7 +6,7 @@ import PackageDescription
 let package = Package(
     name: "MicroSurveysSDK",
     platforms: [
-        .iOS(.v14),
+        .iOS(.v15),
         .macOS(.v11) // required for `swift build` on a Mac; the SDK is iOS-only in practice
     ],
     products: [

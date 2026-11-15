@@ -6,7 +6,7 @@ already track. No WebViews, no new instrumentation. Part of
 [MicroSurveys.ai](https://microsurveys.ai); full guide in the
 [iOS SDK docs](https://docs.microsurveys.ai/ios-sdk/).
 
-- **Platforms:** iOS 14+ · Swift 5.9 · UIKit & SwiftUI
+- **Platforms:** iOS 15+ · Swift 5.9 · UIKit & SwiftUI
 - **Analytics:** works with [Amplitude](https://amplitude.com) out of the box, or
   drive it manually with a single `track(...)` call — your choice.
 - **Question types:** NPS, CSAT, CES, thumbs, stars, single-choice, emoji, open text.
