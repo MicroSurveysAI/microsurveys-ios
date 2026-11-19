@@ -65,9 +65,12 @@ ms.presentationAnchor = { myTopViewController }   // defaults to the active scen
 4. If eligible, the survey is scheduled after `delaySeconds` (the cap is
    re-checked at fire time) and presented on the top-most view controller using
    your dashboard theme.
-5. On close the SDK POSTs an **impression** (`dismissed` reflects the outcome)
-   and a **response** (answers + completion). Both carry a UUID `clientId` and
-   are queued in a small disk outbox, so offline submissions flush on next launch.
+5. As soon as the survey appears the SDK POSTs an **impression**; if it's closed
+   without an answer, it sends the same impression again marked `dismissed`. If
+   answered, it POSTs a **response** (answers + completion). Both carry a UUID
+   `clientId` and are queued in a small disk outbox. A failed send is retried
+   every few seconds (2s, doubling to 30s) and when the app returns to the
+   foreground.
 
 Trigger progress, occurrence counters, sticky sampling decisions, and last-shown
 timestamps persist per `endUserId` across app restarts.

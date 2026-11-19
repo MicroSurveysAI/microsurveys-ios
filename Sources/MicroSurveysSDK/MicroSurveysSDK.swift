@@ -277,8 +277,8 @@ public final class MicroSurveysSDK {
         set { presenter.presentationAnchor = newValue }
     }
 
-    /// Refreshes config on every app-foreground, throttled by `configTTL`, and
-    /// checks the server-events mailbox (not throttled).
+    /// Refreshes config on every app-foreground, throttled by `configTTL`, checks the
+    /// server-events mailbox (not throttled) and sends anything still queued.
     private func startLifecycleObserver() {
         foregroundObserver = NotificationCenter.default.addObserver(
             forName: UIApplication.didBecomeActiveNotification,
@@ -287,6 +287,8 @@ public final class MicroSurveysSDK {
         ) { [weak self] _ in
             self?.refreshConfigIfStale()
             self?.mailbox.resume()
+            // Retry timers don't run while the app is suspended: send anything still queued.
+            self?.apiClient.flush()
         }
         // The app may be suspended or killed in the background: send what was counted first.
         backgroundObserver = NotificationCenter.default.addObserver(
@@ -328,17 +330,23 @@ public final class MicroSurveysSDK {
         let endUserId = identity.endUserId
         let userProps = identity.userProperties
         let shownAt = Date()
+        let impressionId = UUID().uuidString
+        let context = DeviceContext.current()
 
         let presented = presenter.present(survey: survey) { [weak self] result in
+            // `nil` means it was never shown, so there's no impression to close.
             guard let self, let result else { return }
-            let context = DeviceContext.current()
-            // Impression is finalized at close, so `dismissed` is authoritative.
-            let impressionId = self.apiClient.recordImpression(surveyId: survey.id,
-                                                               triggerId: trigger.id,
-                                                               endUserId: endUserId,
-                                                               shownAt: shownAt,
-                                                               dismissed: result.dismissed,
-                                                               context: context)
+            // The impression went out when the survey appeared. Closed without an answer:
+            // send it again with the same id so the server marks it dismissed.
+            if result.dismissed {
+                self.apiClient.recordImpression(clientId: impressionId,
+                                                surveyId: survey.id,
+                                                triggerId: trigger.id,
+                                                endUserId: endUserId,
+                                                shownAt: shownAt,
+                                                dismissed: true,
+                                                context: context)
+            }
             // A pure dismissal (closed with no answers) is an impression, NOT a response —
             // don't submit one, or it inflates the response count. Partial multi-step answers
             // (answered ≥1, then dropped) still count.
@@ -353,6 +361,16 @@ public final class MicroSurveysSDK {
                                               context: context,
                                               answers: result.answers)
             }
+        }
+        // Count the impression the moment the survey is on screen, not when it closes.
+        if presented {
+            apiClient.recordImpression(clientId: impressionId,
+                                       surveyId: survey.id,
+                                       triggerId: trigger.id,
+                                       endUserId: endUserId,
+                                       shownAt: shownAt,
+                                       dismissed: false,
+                                       context: context)
         }
         let reason: DecisionReason = presented ? .shown
             : (presentationAnchor?() ?? Presenter.topViewController()) == nil ? .notPresentable : .anotherSurveyShowing

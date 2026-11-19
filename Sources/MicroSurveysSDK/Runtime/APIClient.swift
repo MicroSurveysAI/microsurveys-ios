@@ -3,9 +3,10 @@
 //  MicroSurveysSDK
 //
 //  URLSession-based async client for the SDK endpoints, plus a tiny
-//  persistent outbox so impressions/responses survive offline launches and
-//  flush on the next start. Every impression/response carries a UUID `clientId`
-//  so the server upserts and retries never duplicate (API-CONTRACT §Idempotency).
+//  persistent outbox so impressions/responses survive offline launches. A failed
+//  send is retried every few seconds (and on app foreground) until it goes out.
+//  Every impression/response carries a UUID `clientId` so the server upserts and
+//  retries never duplicate (API-CONTRACT §Idempotency).
 //
 
 import Foundation
@@ -86,9 +87,21 @@ final class APIClient {
     private let apiVersion = "2026-06-30"
     private let outbox: Outbox
 
-    /// Guards against concurrent flushes.
+    /// Guards the flush state below.
     private let flushLock = NSLock()
     private var isFlushing = false
+    /// `flush()` was called while a flush was running: run another pass before finishing,
+    /// so an entry queued after the last check never waits for the next event.
+    private var flushRequested = false
+    /// Consecutive flushes that stopped on a failure; sets the retry delay.
+    private var failedFlushes = 0
+    private var retryWork: DispatchWorkItem?
+
+    /// First retry delay after a failed send; doubles per consecutive failure up to `retryMaxDelay`.
+    var retryBaseDelay: TimeInterval = 2
+    var retryMaxDelay: TimeInterval = 30
+    /// Ingest requests give up after this, so a stalled connection can't block the queue.
+    static let ingestTimeout: TimeInterval = 15
 
     init(apiKey: String,
          baseURL: URL,
@@ -131,16 +144,16 @@ final class APIClient {
 
     // MARK: Impressions / responses
 
-    /// Queues an impression and kicks a flush. Best-effort; never throws. Returns the
-    /// impression's `clientId`, so the response from the same showing can point back to it.
-    @discardableResult
-    func recordImpression(surveyId: String,
+    /// Queues an impression and kicks a flush. Best-effort; never throws. Sent once when the
+    /// survey appears (`dismissed: false`), then again with the same `clientId` and
+    /// `dismissed: true` if it's closed without an answer; the server flips it.
+    func recordImpression(clientId: String,
+                          surveyId: String,
                           triggerId: String?,
                           endUserId: String,
                           shownAt: Date,
                           dismissed: Bool,
-                          context: DeviceContext) -> String {
-        let clientId = UUID().uuidString
+                          context: DeviceContext) {
         let payload = ImpressionPayload(clientId: clientId,
                                         surveyId: surveyId,
                                         triggerId: triggerId,
@@ -150,7 +163,6 @@ final class APIClient {
                                         context: context)
         MSLog.info("impression queued (survey=\(surveyId), dismissed=\(dismissed))")
         enqueue(path: "/api/sdk/impressions", value: ImpressionBatch(impressions: [payload]))
-        return clientId
     }
 
     /// Queues a response and kicks a flush. Best-effort; never throws.
@@ -237,40 +249,76 @@ final class APIClient {
     // MARK: Flush
 
     /// Attempts to POST all queued entries in order. Stops at the first failure
-    /// (likely offline) and leaves the rest for next time. Entries queued while a
-    /// flush is running are sent by the same flush, so nothing waits for the next
-    /// event. Successful entries are removed; idempotency keys make re-sends safe.
+    /// (likely offline), keeps the rest, and retries after a short delay (2s, doubling
+    /// to 30s) without waiting for the next event or launch. Entries queued while a
+    /// flush is running are sent by the same flush. Successful entries are removed;
+    /// idempotency keys make re-sends safe.
     func flush() {
         flushLock.lock()
-        if isFlushing { flushLock.unlock(); return }
+        if isFlushing { flushRequested = true; flushLock.unlock(); return }
         isFlushing = true
+        flushRequested = false
+        retryWork?.cancel()
+        retryWork = nil
         flushLock.unlock()
 
         Task {
-            defer {
-                flushLock.lock(); isFlushing = false; flushLock.unlock()
-            }
             // Guards against re-sending an entry whose removal didn't persist.
             var sent = Set<String>()
-            drain: while true {
-                let pending = outbox.snapshot().filter { !sent.contains($0.id) }
-                if pending.isEmpty { break }
-                for entry in pending {
-                    do {
-                        try await post(path: entry.path, body: entry.body)
-                        outbox.remove(id: entry.id)
-                        sent.insert(entry.id)
-                    } catch {
-                        break drain   // network/server problem — retry on the next flush
+            var failed = false
+            while true {
+                drain: while true {
+                    let pending = outbox.snapshot().filter { !sent.contains($0.id) }
+                    if pending.isEmpty { break }
+                    for entry in pending {
+                        do {
+                            try await post(path: entry.path, body: entry.body)
+                            outbox.remove(id: entry.id)
+                            sent.insert(entry.id)
+                        } catch {
+                            failed = true
+                            break drain   // network/server problem — retry shortly
+                        }
                     }
                 }
+                if !finishPass(failed: failed) { return }
             }
         }
+    }
+
+    /// Ends a flush pass. Returns true when another pass should run because `flush()` was
+    /// called meanwhile; otherwise clears the flushing state and, after a failure, schedules a retry.
+    private func finishPass(failed: Bool) -> Bool {
+        flushLock.lock(); defer { flushLock.unlock() }
+        if !failed && flushRequested {
+            flushRequested = false
+            return true
+        }
+        isFlushing = false
+        flushRequested = false
+        if failed {
+            failedFlushes += 1
+            scheduleRetryLocked()
+        } else {
+            failedFlushes = 0
+        }
+        return false
+    }
+
+    /// Schedules the next flush after a failure. Caller holds `flushLock`.
+    private func scheduleRetryLocked() {
+        let delay = min(retryBaseDelay * pow(2, Double(max(failedFlushes - 1, 0))), retryMaxDelay)
+        let work = DispatchWorkItem { [weak self] in self?.flush() }
+        retryWork?.cancel()
+        retryWork = work
+        MSLog.info("upload failed; retrying in \(Int(delay))s")
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + delay, execute: work)
     }
 
     private func post(path: String, body: Data) async throws {
         var request = URLRequest(url: endpoint(path))
         request.httpMethod = "POST"
+        request.timeoutInterval = Self.ingestTimeout
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue(apiVersion, forHTTPHeaderField: "MS-Api-Version")
         request.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
