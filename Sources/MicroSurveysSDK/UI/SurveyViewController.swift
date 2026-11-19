@@ -59,6 +59,12 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
     private var pad: CGFloat = 0
     private var topInset: CGFloat = 0
     private var hasProgress = false
+    /// The thank-you's auto-close, cancelled when the survey closes some other way first.
+    private var thankYouTimer: DispatchWorkItem?
+    /// The thank-you content, once shown; the sheet's detent grows to fit it.
+    private var thankYouStack: UIStackView?
+    /// Set once the survey starts closing, so it never closes twice (timer vs tap vs scrim).
+    private var isClosing = false
 
     // MARK: Init
 
@@ -143,7 +149,17 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
         // so the keyboard (which inflates safeAreaInsets.bottom for a focused field) can't balloon
         // the detent and jump the sheet to full height.
         let bottom = theme.spacing + theme.controlHeight + max(pad, min(baseBottomInset, 44))
-        return top + contentHeight + bottom
+        let questionHeight = top + contentHeight + bottom
+        // During the thank-you, keep the sheet at least as tall as it was, and taller if the
+        // message needs it (padding above and below, plus the home-indicator inset).
+        if let thanks = thankYouStack {
+            let rows = thanks.arrangedSubviews.map {
+                $0.sizeThatFits(CGSize(width: contentWidth, height: .greatestFiniteMagnitude)).height
+            }
+            let thanksHeight = rows.reduce(0, +) + thanks.spacing * CGFloat(max(0, rows.count - 1))
+            return max(questionHeight, baseTopInset + pad + thanksHeight + max(pad, min(baseBottomInset, 44)))
+        }
+        return questionHeight
     }
 
     // MARK: Lifecycle
@@ -561,12 +577,14 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
         check.contentMode = .scaleAspectFit
 
         let label = UILabel()
-        let custom = survey.successMessage?.trimmingCharacters(in: .whitespacesAndNewlines)
-        label.text = (custom?.isEmpty == false ? custom : "Thanks!")
+        let message = ThankYouTiming.message(survey.successMessage)
+        label.text = message
         label.font = theme.promptFont
         label.textColor = theme.text
         label.textAlignment = .center
         label.numberOfLines = 0
+        label.lineBreakMode = .byWordWrapping
+        label.setContentCompressionResistancePriority(.required, for: .vertical)
 
         let stack = UIStackView(arrangedSubviews: [check, label])
         stack.axis = .vertical
@@ -574,23 +592,50 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
         stack.spacing = theme.spacing
         stack.alpha = 0
         stack.translatesAutoresizingMaskIntoConstraints = false
+        // VoiceOver reads the message as one element; double-tapping it closes, like a tap.
+        stack.isAccessibilityElement = true
+        stack.accessibilityLabel = message
+        stack.accessibilityTraits = .button
         card.addSubview(stack)
+        thankYouStack = stack
         NSLayoutConstraint.activate([
             stack.centerXAnchor.constraint(equalTo: card.centerXAnchor),
             stack.centerYAnchor.constraint(equalTo: card.centerYAnchor),
-            stack.leadingAnchor.constraint(greaterThanOrEqualTo: card.leadingAnchor, constant: pad),
-            stack.trailingAnchor.constraint(lessThanOrEqualTo: card.trailingAnchor, constant: -pad),
+            // Full width, so a long message wraps across the card instead of in a narrow column.
+            stack.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: pad),
+            stack.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -pad),
             stack.topAnchor.constraint(greaterThanOrEqualTo: card.topAnchor, constant: pad),
             stack.bottomAnchor.constraint(lessThanOrEqualTo: card.bottomAnchor, constant: -pad),
         ])
 
-        UIView.animate(withDuration: 0.25) { stack.alpha = 1 }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.3) { [weak self] in
-            self?.dismissSelf()
+        // A long message can need more room than the last question did: grow the sheet to fit it.
+        if usesSystemSheet, #available(iOS 16.0, *), let sheet = sheetPresentationController {
+            sheet.animateChanges { sheet.invalidateDetents() }
         }
+
+        // Tapping the thank-you closes it at once.
+        card.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(thankYouTapped)))
+
+        UIView.animate(withDuration: 0.25) { stack.alpha = 1 }
+        UIAccessibility.post(notification: .layoutChanged, argument: stack)
+
+        var delayMs = ThankYouTiming.durationMs(message: survey.successMessage, pace: survey.successPace)
+        // Screen-reader users need longer: VoiceOver has to reach and read the message first.
+        if UIAccessibility.isVoiceOverRunning { delayMs *= 2 }
+        let timer = DispatchWorkItem { [weak self] in self?.dismissSelf() }
+        thankYouTimer = timer
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(delayMs), execute: timer)
+    }
+
+    @objc private func thankYouTapped() {
+        dismissSelf()
     }
 
     private func dismissSelf() {
+        guard !isClosing else { return }
+        isClosing = true
+        thankYouTimer?.cancel()
+        thankYouTimer = nil
         view.endEditing(true)
         if !usesSystemSheet {
             animateCardOut { [weak self] in self?.dismiss(animated: false) }
@@ -602,7 +647,10 @@ public final class SurveyViewController: UIViewController, UIAdaptivePresentatio
     // MARK: UIAdaptivePresentationControllerDelegate (interactive/swipe dismiss)
 
     public func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
-        // User swiped the sheet away without finishing.
+        // User swiped the sheet away (without finishing, or during the thank-you).
+        isClosing = true
+        thankYouTimer?.cancel()
+        thankYouTimer = nil
         report(completed: false, dismissed: true)
     }
 
