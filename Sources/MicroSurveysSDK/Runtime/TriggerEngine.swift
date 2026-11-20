@@ -174,7 +174,7 @@ final class TriggerEngine {
                     continue
                 }
                 // (5) sampling (sticky)
-                guard passesSampling(survey: survey, endUserId: endUserId, state: &state) else {
+                guard passesSampling(survey: survey, endUserId: endUserId) else {
                     skip(.sampledOut)
                     MSLog.info("  ✗ skip '\(survey.name)': not in sample (\(survey.samplePercent ?? 100)%)"); continue
                 }
@@ -235,15 +235,10 @@ final class TriggerEngine {
         return effective >= 1 && effective % fireEvery == 0
     }
 
-    private func passesSampling(survey: Survey, endUserId: String, state: inout UserTriggerState) -> Bool {
-        if let decision = state.surveys[survey.id]?.sampleDecision { return decision }
-        let decision = Sampling.inSample(endUserId: endUserId,
-                                         surveyId: survey.id,
-                                         samplePercent: survey.samplePercent ?? 100)
-        var record = state.surveys[survey.id] ?? SurveyRecord()
-        record.sampleDecision = decision
-        state.surveys[survey.id] = record
-        return decision
+    /// Recomputed on every evaluation, never stored: the bucket is deterministic, so a user stays
+    /// in while the percentage only goes up, and raising it after launch lets new users in.
+    private func passesSampling(survey: Survey, endUserId: String) -> Bool {
+        Sampling.inSample(endUserId: endUserId, surveyId: survey.id, samplePercent: survey.samplePercent ?? 100)
     }
 
     private func passesCap(survey: Survey, state: UserTriggerState, nowDate: Date) -> Bool {

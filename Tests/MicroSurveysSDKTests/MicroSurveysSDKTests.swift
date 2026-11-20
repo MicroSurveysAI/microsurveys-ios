@@ -364,6 +364,42 @@ final class MicroSurveysSDKTests: XCTestCase {
         XCTAssertEqual(decide(survey(sample: 0), "checkout", [:]).map(\.reason), [.sampledOut])
     }
 
+    func testRaisingSamplePercentLetsASampledOutUserIn() throws {
+        let defaults = UserDefaults(suiteName: "sample-test-\(UUID().uuidString)")!
+        let bucket = Int(Sampling.fnv1a32("u1:s1") % 100)
+        var percent = bucket // just below the user's bucket: out
+        let engine = TriggerEngine(store: TriggerStateStore(defaults: defaults),
+                                   identityProvider: { MSIdentity(anonymousId: "u1") })
+        engine.surveysProvider = { [try! self.sampledSurvey(percent)] }
+        XCTAssertEqual(decide(engine).map(\.reason), [.sampledOut])
+        percent = bucket + 1
+        XCTAssertEqual(decide(engine).map(\.reason), [.eligible])
+    }
+
+    func testIgnoresASamplingDecisionSavedByAnOlderVersion() throws {
+        let defaults = UserDefaults(suiteName: "sample-test-\(UUID().uuidString)")!
+        defaults.set(Data(#"{"triggers":{},"surveys":{"s1":{"sampleDecision":false}}}"#.utf8),
+                     forKey: "com.microsurveys.triggerstate.u1")
+        let engine = TriggerEngine(store: TriggerStateStore(defaults: defaults),
+                                   identityProvider: { MSIdentity(anonymousId: "u1") })
+        engine.surveysProvider = { [try! self.sampledSurvey(100)] }
+        XCTAssertEqual(decide(engine).map(\.reason), [.eligible])
+    }
+
+    private func sampledSurvey(_ percent: Int) throws -> Survey {
+        try JSONDecoder().decode(Survey.self, from: Data(
+            #"{"id":"s1","name":"S","questions":[],"samplePercent":\#(percent),"maxPerUserDays":0,"triggers":[{"id":"t","type":"SINGLE","delaySeconds":60,"fireEvery":1,"warmupCount":0,"steps":[{"order":0,"event":"checkout","match":{}}]}]}"#.utf8))
+    }
+
+    private func decide(_ engine: TriggerEngine) -> [Decision] {
+        let done = expectation(description: "evaluated")
+        var got: [Decision] = []
+        engine.onEvaluated = { _, _, decisions, _ in got = decisions; done.fulfill() }
+        engine.process(name: "checkout", properties: [:])
+        wait(for: [done], timeout: 2)
+        return got
+    }
+
     func testConfigWithoutDebugUsersDecodes() throws {
         let config = try JSONDecoder().decode(SDKConfig.self, from: Data(#"{"projectId":"p","surveys":[]}"#.utf8))
         XCTAssertNil(config.debugUsers)

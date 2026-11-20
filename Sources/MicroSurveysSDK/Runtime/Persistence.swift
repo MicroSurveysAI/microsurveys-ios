@@ -137,8 +137,6 @@ struct TriggerRecord: Codable {
 struct SurveyRecord: Codable {
     /// Unix time the survey was last shown to this user, for `maxPerUserDays`.
     var lastShownAt: TimeInterval?
-    /// Sticky sampling decision (computed once, reused forever).
-    var sampleDecision: Bool?
 }
 
 /// The full persisted state for one `endUserId`.
